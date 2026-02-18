@@ -10,6 +10,15 @@ make build/basic
 ./build/basic
 ```
 
+## Quick start in 30 seconds
+
+- Immediate mode: type commands without line numbers (example: `PRINT 2+2`).
+- Program mode: start a line with a number to store it (example: `10 PRINT "HI"`).
+- Edit a program line: type the same line number again with new text.
+- Delete a program line: type only its line number (example: `10`).
+- Run stored lines with `RUN`, show them with `LIST`, clear with `NEW`.
+- Exit BASIC with `Ctrl-D` (EOF) on macOS/Linux terminals.
+
 ## How to read this guide
 
 - `YOU TYPE` means the lines you enter.
@@ -17,6 +26,7 @@ make build/basic
 - Line numbers (like `10`, `20`, `30`) are program steps.
 - `RUN` starts your stored program.
 - `NEW` clears your stored program.
+- `RUN` resets variables/arrays each run, but keeps stored program lines.
 
 ## Lesson 1: Your first commands
 
@@ -134,6 +144,7 @@ RUN
 ```
 
 `DIM` creates an array. Here we store several numbers under one name (`N`).
+Array indexes are 1-based in this interpreter (`N(1)`, `N(2)`, ...).
 
 ## Lesson 7: Make your own function
 
@@ -195,6 +206,9 @@ PRINT RND(0)
 
 ### YOU TYPE
 ```basic
+NEW
+10 DEF FNSQ(X)=X*X
+20 PRINT FNSQ(6)
 SAVE "build/manual-save.bas"
 NEW
 LOAD "build/manual-save.bas"
@@ -226,12 +240,14 @@ PRINT "HI ";NAME$
 ```
 
 `INPUT` prints `? ` and waits for a line of text.
+You type `Ada` after the prompt; in captured test output, typed input is not echoed.
 
 ## Lesson 12: Screen drawing (like old-school graphics)
 
 These commands draw on the virtual screen:
 
 - `CLS` clears the screen.
+- `LOCATE` moves the cursor to a row/column.
 - `COLOR` picks foreground/background colors.
 - `PRINT@ row,column,text` prints at a position.
 - `PLOT row,column,ch` places one character.
@@ -256,6 +272,45 @@ SCREEN 3 ------
 ```
 
 If you run in a real ANSI terminal, the screen drawing appears visually instead of `SCREEN ...` lines.
+Screen coordinates are 1-based: row 1, column 1 is top-left.
+
+## Lesson 13: Comments and tracing
+
+### YOU TYPE
+```basic
+NEW
+10 REM GREET LOOP
+20 FOR I=1 TO 2
+30 PRINT "HI"
+40 NEXT I
+TRON
+RUN
+TROFF
+RUN
+```
+
+### YOU SEE
+```text
+TRACE 10
+TRACE 20
+TRACE 30
+HI
+TRACE 40
+TRACE 30
+HI
+TRACE 40
+HI
+HI
+```
+
+`REM` (or `'`) adds comments. `TRON` shows each line as it runs; `TROFF` turns tracing off.
+
+## Common errors (quick help)
+
+- `SYNTAX ERROR`: BASIC could not parse the line.
+- `TYPE MISMATCH IN <line>`: number vs string values were mixed incorrectly.
+- `FILE NOT FOUND`: `LOAD` path does not exist.
+- `CAN'T CONTINUE`: `CONT` was used when no stopped program can resume.
 
 ## Tiny challenge set
 
@@ -265,6 +320,13 @@ Try these next:
 2. Make Lesson 3 print a different message for scores under 5.
 3. Turn Lesson 4 into a 3-question quiz with `INPUT` and `IF`.
 4. Save your own game to a `.bas` file and reload it.
+
+## Mini command card
+
+- Program building: line numbers, `LIST`, `LIST 100-200`, `NEW`
+- Running and control: `RUN`, `STOP`, `CONT`, `END`
+- Files: `SAVE "file.bas"`, `LOAD "file.bas"`
+- Comments/debugging: `REM ...`, `' ...`, `TRON`, `TROFF`
 
 ## Verified examples
 
