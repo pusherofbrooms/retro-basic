@@ -80,6 +80,7 @@ Use `beads` (`bd`) as the project task tracker with dependency-aware issues.
 - Check installation health first: `bd doctor`
 - `bd init` has already been run for this repo. Do not run `bd init` again.
 - Confirm active database location: `bd where`
+- In sandboxed/non-interactive agent sessions, prefer `bd --no-daemon ...` to avoid daemon startup timeouts.
 
 ### Daily Workflow
 - Create a task: `bd create "Implement tokenizer line storage"`
