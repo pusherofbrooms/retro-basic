@@ -6,6 +6,7 @@ VALGRIND ?= valgrind
 
 SRC = src/main.c src/basic.c
 OBJ = build/main.o build/basic.o
+DEP = $(OBJ:.o=.d)
 
 build/basic: $(OBJ)
 	@mkdir -p build
@@ -13,7 +14,7 @@ build/basic: $(OBJ)
 
 build/%.o: src/%.c
 	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 test: build/basic
 	./scripts/run-tests.sh
@@ -29,3 +30,5 @@ clean:
 	rm -rf build
 
 .PHONY: test lint test-mem clean
+
+-include $(DEP)

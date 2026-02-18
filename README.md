@@ -60,12 +60,17 @@ RUN
 - IF/THEN (inline statement): `IF A > 3 THEN PRINT "OK"`
 - GOTO: `GOTO 200`
 - GOSUB/RETURN: `GOSUB 900` / `RETURN`
+- ON dispatch: `ON X GOTO 100,200` / `ON X GOSUB 500,600`
+- User functions: `DEF FNX(A)=A*2 : PRINT FNX(5)`
 - FOR/NEXT: `FOR I = 1 TO 3 : PRINT I : NEXT I`
 - DATA/READ/RESTORE: `DATA 1, "HI" : READ A, B$ : RESTORE`
+- Comments: `REM THIS IS A COMMENT` and `' SHORTHAND COMMENT`
 - DIM arrays: `DIM A(10) : A(3) = 7`
 - Numeric functions: `PRINT ABS(-2)`, `PRINT SQR(9)`
+- Random control: `RANDOMIZE 42 : PRINT RND(1), RND(0), RND(-7)`
 - String functions: `PRINT LEFT$("HELLO", 2)`, `PRINT LEN("HI")`
-- Program control: `RUN`, `LIST`, `NEW`, `END`, `STOP`
+- Program control: `RUN`, `CONT`, `LIST`, `NEW`, `END`, `STOP`
+- Tracing: `TRON` / `TROFF`
 - LOAD from file: `LOAD "path/to/program.bas"`
 
 ## Tests

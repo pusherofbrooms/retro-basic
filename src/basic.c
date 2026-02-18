@@ -3,8 +3,10 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 typedef enum {
   VAL_NUMBER,
@@ -29,6 +31,12 @@ typedef struct {
   size_t size;
   Value *values;
 } Array;
+
+typedef struct {
+  char *name;
+  char *arg_name;
+  char *expr;
+} UserFunction;
 
 typedef struct {
   int number;
@@ -82,6 +90,7 @@ typedef struct {
 typedef struct {
   const char *input;
   size_t pos;
+  size_t token_start;
   Token current;
 } Tokenizer;
 
@@ -93,6 +102,9 @@ struct BasicInterpreter {
   Array *arrays;
   size_t array_count;
   size_t array_capacity;
+  UserFunction *functions;
+  size_t function_count;
+  size_t function_capacity;
   ForFrame *for_stack;
   size_t for_count;
   size_t for_capacity;
@@ -105,6 +117,13 @@ struct BasicInterpreter {
   char error_msg[128];
   int in_program;
   int current_line_number;
+  int can_continue;
+  size_t continue_index;
+  int trace_enabled;
+  uint32_t rng_state;
+  int rng_seeded;
+  float rnd_last;
+  int rnd_has_last;
 };
 
 static void value_free(Value *value) {
@@ -347,6 +366,7 @@ static void data_list_free(DataList *data) {
 static void tokenizer_init(Tokenizer *tz, const char *input) {
   tz->input = input;
   tz->pos = 0;
+  tz->token_start = 0;
   tz->current.type = TOK_EOF;
   tz->current.text[0] = '\0';
   tz->current.string[0] = '\0';
@@ -361,6 +381,7 @@ static void tokenizer_skip_spaces(Tokenizer *tz) {
 
 static void tokenizer_next(Tokenizer *tz) {
   tokenizer_skip_spaces(tz);
+  tz->token_start = tz->pos;
   char c = tz->input[tz->pos];
   tz->current.text[0] = '\0';
   tz->current.string[0] = '\0';
@@ -506,6 +527,171 @@ static char *value_to_string(const Value *value) {
 }
 
 static Value parse_expression(Tokenizer *tz, BasicInterpreter *interp);
+
+static UserFunction *functions_find(BasicInterpreter *interp, const char *name) {
+  for (size_t i = 0; i < interp->function_count; i++) {
+    if (strcmp(interp->functions[i].name, name) == 0) {
+      return &interp->functions[i];
+    }
+  }
+  return NULL;
+}
+
+static void functions_free(BasicInterpreter *interp) {
+  for (size_t i = 0; i < interp->function_count; i++) {
+    free(interp->functions[i].name);
+    free(interp->functions[i].arg_name);
+    free(interp->functions[i].expr);
+  }
+  free(interp->functions);
+  interp->functions = NULL;
+  interp->function_count = 0;
+  interp->function_capacity = 0;
+}
+
+static int functions_set(BasicInterpreter *interp, const char *name, const char *arg_name, const char *expr) {
+  UserFunction *existing = functions_find(interp, name);
+  if (existing) {
+    char *new_arg_name = strdup(arg_name);
+    char *new_expr = strdup(expr);
+    if (!new_arg_name || !new_expr) {
+      free(new_arg_name);
+      free(new_expr);
+      return 0;
+    }
+    free(existing->arg_name);
+    free(existing->expr);
+    existing->arg_name = new_arg_name;
+    existing->expr = new_expr;
+    return 1;
+  }
+
+  if (interp->function_count == interp->function_capacity) {
+    size_t new_cap = interp->function_capacity == 0 ? 8 : interp->function_capacity * 2;
+    UserFunction *new_functions = (UserFunction *)realloc(interp->functions, new_cap * sizeof(UserFunction));
+    if (!new_functions) {
+      return 0;
+    }
+    interp->functions = new_functions;
+    interp->function_capacity = new_cap;
+  }
+
+  UserFunction *fn = &interp->functions[interp->function_count];
+  fn->name = strdup(name);
+  fn->arg_name = strdup(arg_name);
+  fn->expr = strdup(expr);
+  if (!fn->name || !fn->arg_name || !fn->expr) {
+    free(fn->name);
+    free(fn->arg_name);
+    free(fn->expr);
+    return 0;
+  }
+  interp->function_count++;
+  return 1;
+}
+
+static void vars_remove(BasicInterpreter *interp, const char *name) {
+  for (size_t i = 0; i < interp->var_count; i++) {
+    if (strcmp(interp->vars[i].name, name) != 0) {
+      continue;
+    }
+    free(interp->vars[i].name);
+    value_free(&interp->vars[i].value);
+    for (size_t j = i + 1; j < interp->var_count; j++) {
+      interp->vars[j - 1] = interp->vars[j];
+    }
+    interp->var_count--;
+    return;
+  }
+}
+
+static Value functions_eval(BasicInterpreter *interp, UserFunction *fn, const Value *arg) {
+  Variable *existing = vars_find(interp, fn->arg_name);
+  Value old_value = value_number(0.0f);
+  int had_existing = existing != NULL;
+  if (had_existing) {
+    old_value = value_copy(&existing->value);
+  }
+
+  Variable *param = vars_get(interp, fn->arg_name, 1);
+  if (!param) {
+    runtime_error(interp, "OUT OF MEMORY");
+    value_free(&old_value);
+    return value_number(0.0f);
+  }
+  value_free(&param->value);
+  param->value = value_copy(arg);
+
+  Tokenizer fn_tz;
+  tokenizer_init(&fn_tz, fn->expr);
+  tokenizer_next(&fn_tz);
+  Value result = parse_expression(&fn_tz, interp);
+  if (!interp->error && fn_tz.current.type != TOK_EOF) {
+    runtime_error(interp, "SYNTAX ERROR");
+    value_free(&result);
+    result = value_number(0.0f);
+  }
+
+  if (had_existing) {
+    value_free(&param->value);
+    param->value = old_value;
+  } else {
+    vars_remove(interp, fn->arg_name);
+    value_free(&old_value);
+  }
+  return result;
+}
+
+static uint32_t rng_seed_from_number(float number) {
+  int32_t seed = (int32_t)number;
+  if (seed == 0) {
+    return 1u;
+  }
+  return (uint32_t)seed;
+}
+
+static void rng_seed(BasicInterpreter *interp, uint32_t seed) {
+  if (seed == 0) {
+    seed = 1u;
+  }
+  interp->rng_state = seed;
+  interp->rng_seeded = 1;
+  interp->rnd_has_last = 0;
+  interp->rnd_last = 0.0f;
+}
+
+static float rng_next(BasicInterpreter *interp) {
+  if (!interp->rng_seeded) {
+    rng_seed(interp, (uint32_t)time(NULL));
+  }
+  interp->rng_state = interp->rng_state * 1664525u + 1013904223u;
+  float value = (float)(interp->rng_state >> 8) / 16777216.0f;
+  interp->rnd_last = value;
+  interp->rnd_has_last = 1;
+  return value;
+}
+
+static float basic_rnd(BasicInterpreter *interp, int has_arg, float arg) {
+  if (!has_arg || arg > 0.0f) {
+    return rng_next(interp);
+  }
+  if (arg == 0.0f) {
+    if (!interp->rnd_has_last) {
+      return rng_next(interp);
+    }
+    return interp->rnd_last;
+  }
+  rng_seed(interp, rng_seed_from_number(-arg));
+  return rng_next(interp);
+}
+
+static void basic_randomize(BasicInterpreter *interp, int has_seed, float seed) {
+  if (has_seed) {
+    rng_seed(interp, rng_seed_from_number(seed));
+    return;
+  }
+  rng_seed(interp, (uint32_t)time(NULL));
+}
 
 static int builtin_arity(const char *name, size_t *min_args, size_t *max_args) {
   if (strcmp(name, "LEFT$") == 0 || strcmp(name, "RIGHT$") == 0) {

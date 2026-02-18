@@ -82,13 +82,80 @@ static void reset_runtime(BasicInterpreter *interp, int reset_variables) {
   if (reset_variables) {
     vars_free(interp);
     arrays_free(interp);
+    functions_free(interp);
+    interp->can_continue = 0;
+    interp->continue_index = 0;
   }
 }
 
 static int basic_save_file(BasicInterpreter *interp, const char *path);
 static void basic_list_filtered(BasicInterpreter *interp, int has_start, int start_line, int has_end, int end_line);
+static void basic_continue(BasicInterpreter *interp);
 
 static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index);
+
+static void execute_def(Tokenizer *tz, BasicInterpreter *interp) {
+  if (tz->current.type != TOK_IDENT || strncmp(tz->current.text, "FN", 2) != 0) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  char fn_name[128];
+  strncpy(fn_name, tz->current.text, sizeof(fn_name));
+  fn_name[sizeof(fn_name) - 1] = '\0';
+  tokenizer_next(tz);
+  if (!token_is(tz, TOK_LPAREN, NULL)) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  tokenizer_next(tz);
+  if (tz->current.type != TOK_IDENT) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  char arg_name[128];
+  strncpy(arg_name, tz->current.text, sizeof(arg_name));
+  arg_name[sizeof(arg_name) - 1] = '\0';
+  tokenizer_next(tz);
+  if (!token_is(tz, TOK_RPAREN, NULL)) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  tokenizer_next(tz);
+  if (!token_is(tz, TOK_OP, "=")) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  tokenizer_next(tz);
+  if (tz->current.type == TOK_EOF || tz->current.type == TOK_COLON) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  size_t expr_start = tz->token_start;
+  while (tz->current.type != TOK_EOF && tz->current.type != TOK_COLON) {
+    tokenizer_next(tz);
+  }
+  size_t expr_end = tz->token_start;
+  while (expr_end > expr_start && isspace((unsigned char)tz->input[expr_end - 1])) {
+    expr_end--;
+  }
+  if (expr_end <= expr_start) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  size_t expr_len = expr_end - expr_start;
+  char *expr = (char *)malloc(expr_len + 1);
+  if (!expr) {
+    runtime_error(interp, "OUT OF MEMORY");
+    return;
+  }
+  memcpy(expr, tz->input + expr_start, expr_len);
+  expr[expr_len] = '\0';
+  int ok = functions_set(interp, fn_name, arg_name, expr);
+  free(expr);
+  if (!ok) {
+    runtime_error(interp, "OUT OF MEMORY");
+  }
+}
 
 static void execute_statement_list(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
   while (tz->current.type != TOK_EOF && !interp->stop && !interp->error) {
@@ -322,6 +389,72 @@ static void execute_goto(BasicInterpreter *interp, size_t *next_line_index, int 
     return;
   }
   *next_line_index = idx;
+}
+
+static int gosub_push(BasicInterpreter *interp, size_t return_index) {
+  if (interp->gosub_count == interp->gosub_capacity) {
+    size_t new_cap = interp->gosub_capacity == 0 ? 8 : interp->gosub_capacity * 2;
+    GosubFrame *new_stack = (GosubFrame *)realloc(interp->gosub_stack, new_cap * sizeof(GosubFrame));
+    if (!new_stack) {
+      runtime_error(interp, "OUT OF MEMORY");
+      return 0;
+    }
+    interp->gosub_stack = new_stack;
+    interp->gosub_capacity = new_cap;
+  }
+  interp->gosub_stack[interp->gosub_count++].return_index = return_index;
+  return 1;
+}
+
+static void execute_on(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  Value selector = parse_expression(tz, interp);
+  if (interp->error) {
+    value_free(&selector);
+    return;
+  }
+  if (selector.type != VAL_NUMBER) {
+    value_free(&selector);
+    runtime_error(interp, "TYPE MISMATCH");
+    return;
+  }
+  int branch = (int)selector.number;
+  value_free(&selector);
+
+  if (!token_is(tz, TOK_IDENT, "GOTO") && !token_is(tz, TOK_IDENT, "GOSUB")) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  int is_gosub = token_is(tz, TOK_IDENT, "GOSUB");
+  tokenizer_next(tz);
+
+  int ordinal = 1;
+  int target_line = 0;
+  int has_target = 0;
+  while (1) {
+    if (tz->current.type != TOK_NUMBER) {
+      runtime_error(interp, "SYNTAX ERROR");
+      return;
+    }
+    if (ordinal == branch) {
+      target_line = (int)tz->current.number;
+      has_target = 1;
+    }
+    ordinal++;
+    tokenizer_next(tz);
+    if (token_is(tz, TOK_COMMA, NULL)) {
+      tokenizer_next(tz);
+      continue;
+    }
+    break;
+  }
+
+  if (!has_target || branch < 1) {
+    return;
+  }
+  if (is_gosub && !gosub_push(interp, *next_line_index)) {
+    return;
+  }
+  execute_goto(interp, next_line_index, target_line);
 }
 
 static void execute_for(Tokenizer *tz, BasicInterpreter *interp, size_t current_index) {
@@ -569,6 +702,13 @@ static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *n
   if (tz->current.type == TOK_EOF) {
     return;
   }
+  if (token_is(tz, TOK_IDENT, "REM")) {
+    tokenizer_next(tz);
+    while (tz->current.type != TOK_EOF) {
+      tokenizer_next(tz);
+    }
+    return;
+  }
   if (token_is(tz, TOK_IDENT, "PRINT")) {
     tokenizer_next(tz);
     execute_print(tz, interp);
@@ -608,18 +748,20 @@ static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *n
     }
     int line_number = (int)tz->current.number;
     tokenizer_next(tz);
-    if (interp->gosub_count == interp->gosub_capacity) {
-      size_t new_cap = interp->gosub_capacity == 0 ? 8 : interp->gosub_capacity * 2;
-      GosubFrame *new_stack = (GosubFrame *)realloc(interp->gosub_stack, new_cap * sizeof(GosubFrame));
-      if (!new_stack) {
-        runtime_error(interp, "OUT OF MEMORY");
-        return;
-      }
-      interp->gosub_stack = new_stack;
-      interp->gosub_capacity = new_cap;
+    if (!gosub_push(interp, *next_line_index)) {
+      return;
     }
-    interp->gosub_stack[interp->gosub_count++].return_index = *next_line_index;
     execute_goto(interp, next_line_index, line_number);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "ON")) {
+    tokenizer_next(tz);
+    execute_on(tz, interp, next_line_index);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "DEF")) {
+    tokenizer_next(tz);
+    execute_def(tz, interp);
     return;
   }
   if (token_is(tz, TOK_IDENT, "RETURN")) {
@@ -668,6 +810,41 @@ static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *n
   if (token_is(tz, TOK_IDENT, "RUN")) {
     tokenizer_next(tz);
     basic_run(interp);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "CONT")) {
+    tokenizer_next(tz);
+    basic_continue(interp);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "TRON")) {
+    tokenizer_next(tz);
+    interp->trace_enabled = 1;
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "TROFF")) {
+    tokenizer_next(tz);
+    interp->trace_enabled = 0;
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "RANDOMIZE")) {
+    tokenizer_next(tz);
+    if (tz->current.type == TOK_EOF || tz->current.type == TOK_COLON) {
+      basic_randomize(interp, 0, 0.0f);
+      return;
+    }
+    Value seed = parse_expression(tz, interp);
+    if (interp->error) {
+      value_free(&seed);
+      return;
+    }
+    if (seed.type != VAL_NUMBER) {
+      value_free(&seed);
+      runtime_error(interp, "TYPE MISMATCH");
+      return;
+    }
+    basic_randomize(interp, 1, seed.number);
+    value_free(&seed);
     return;
   }
   if (token_is(tz, TOK_IDENT, "LIST")) {
@@ -723,8 +900,16 @@ static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *n
     basic_new(interp);
     return;
   }
-  if (token_is(tz, TOK_IDENT, "END") || token_is(tz, TOK_IDENT, "STOP")) {
+  if (token_is(tz, TOK_IDENT, "END")) {
     tokenizer_next(tz);
+    interp->can_continue = 0;
+    interp->stop = 1;
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "STOP")) {
+    tokenizer_next(tz);
+    interp->can_continue = 1;
+    interp->continue_index = *next_line_index;
     interp->stop = 1;
     return;
   }
@@ -768,6 +953,9 @@ static void collect_data(BasicInterpreter *interp) {
     tokenizer_init(&tz, interp->program.lines[i].text);
     tokenizer_next(&tz);
     while (tz.current.type != TOK_EOF) {
+      if (token_is(&tz, TOK_IDENT, "REM")) {
+        break;
+      }
       if (token_is(&tz, TOK_IDENT, "DATA")) {
         tokenizer_next(&tz);
         parse_data_statement(&tz, interp, &interp->data);
@@ -792,6 +980,7 @@ BasicInterpreter *basic_create(void) {
   interp->arrays = NULL;
   interp->for_stack = NULL;
   interp->gosub_stack = NULL;
+  interp->functions = NULL;
   interp->data.items = NULL;
   interp->data.count = 0;
   interp->data.capacity = 0;
@@ -806,6 +995,7 @@ void basic_destroy(BasicInterpreter *interp) {
   program_free(&interp->program);
   vars_free(interp);
   arrays_free(interp);
+  functions_free(interp);
   for_stack_free(interp);
   gosub_stack_free(interp);
   data_list_free(&interp->data);
@@ -834,7 +1024,10 @@ void basic_new(BasicInterpreter *interp) {
   program_init(&interp->program);
   vars_free(interp);
   arrays_free(interp);
+  functions_free(interp);
   data_list_free(&interp->data);
+  interp->can_continue = 0;
+  interp->continue_index = 0;
 }
 
 int basic_load_file(BasicInterpreter *interp, const char *path, int replace_program) {
@@ -895,14 +1088,17 @@ static int basic_save_file(BasicInterpreter *interp, const char *path) {
   return 1;
 }
 
-void basic_run(BasicInterpreter *interp) {
-  reset_runtime(interp, 1);
-  collect_data(interp);
+static void run_from_index(BasicInterpreter *interp, size_t index) {
   interp->in_program = 1;
-  size_t index = 0;
+  interp->stop = 0;
+  interp->error = 0;
+  interp->error_msg[0] = '\0';
   while (index < interp->program.count && !interp->stop) {
     ProgramLine *line = &interp->program.lines[index];
     interp->current_line_number = line->number;
+    if (interp->trace_enabled) {
+      printf("TRACE %d\n", line->number);
+    }
     size_t next_index = index + 1;
     Tokenizer tz;
     tokenizer_init(&tz, line->text);
@@ -911,11 +1107,33 @@ void basic_run(BasicInterpreter *interp) {
     if (interp->error) {
       print_error(interp);
       interp->error = 0;
+      interp->can_continue = 0;
       break;
     }
     index = next_index;
   }
+  int stopped = interp->stop;
   interp->in_program = 0;
+  if (!stopped) {
+    interp->can_continue = 0;
+  }
+  interp->stop = 0;
+}
+
+void basic_run(BasicInterpreter *interp) {
+  reset_runtime(interp, 1);
+  collect_data(interp);
+  run_from_index(interp, 0);
+}
+
+static void basic_continue(BasicInterpreter *interp) {
+  if (!interp->can_continue) {
+    runtime_error(interp, "CAN'T CONTINUE");
+    return;
+  }
+  size_t index = interp->continue_index;
+  interp->can_continue = 0;
+  run_from_index(interp, index);
 }
 
 static void execute_immediate(BasicInterpreter *interp, const char *input) {

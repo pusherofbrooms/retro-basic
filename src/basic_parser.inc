@@ -16,6 +16,29 @@ static Value parse_primary(Tokenizer *tz, BasicInterpreter *interp) {
 
     if (token_is(tz, TOK_LPAREN, NULL)) {
       tokenizer_next(tz);
+      UserFunction *user_fn = functions_find(interp, name);
+      if (user_fn) {
+        if (token_is(tz, TOK_RPAREN, NULL)) {
+          runtime_error(interp, "BAD ARGUMENTS");
+          return value_number(0.0f);
+        }
+        Value arg = parse_expression(tz, interp);
+        if (token_is(tz, TOK_COMMA, NULL)) {
+          value_free(&arg);
+          runtime_error(interp, "BAD ARGUMENTS");
+          return value_number(0.0f);
+        }
+        if (!token_is(tz, TOK_RPAREN, NULL)) {
+          value_free(&arg);
+          runtime_error(interp, "SYNTAX ERROR");
+          return value_number(0.0f);
+        }
+        tokenizer_next(tz);
+        Value result = functions_eval(interp, user_fn, &arg);
+        value_free(&arg);
+        return result;
+      }
+
       if (strcmp(name, "LEFT$") == 0 || strcmp(name, "MID$") == 0 || strcmp(name, "RIGHT$") == 0 ||
           strcmp(name, "LEN") == 0 || strcmp(name, "ASC") == 0 || strcmp(name, "CHR$") == 0 ||
           strcmp(name, "ABS") == 0 || strcmp(name, "INT") == 0 || strcmp(name, "RND") == 0 ||
@@ -111,7 +134,12 @@ static Value parse_primary(Tokenizer *tz, BasicInterpreter *interp) {
         } else if (strcmp(name, "INT") == 0) {
           result = value_number(floorf(args[0].number));
         } else if (strcmp(name, "RND") == 0) {
-          result = value_number((float)rand() / (float)RAND_MAX);
+          if (arg_count > 0 && args[0].type != VAL_NUMBER) {
+            runtime_error(interp, "TYPE MISMATCH");
+          } else {
+            float arg = arg_count > 0 ? args[0].number : 1.0f;
+            result = value_number(basic_rnd(interp, arg_count > 0, arg));
+          }
         } else if (strcmp(name, "SIN") == 0) {
           result = value_number(sinf(args[0].number));
         } else if (strcmp(name, "COS") == 0) {
@@ -323,4 +351,3 @@ static Value parse_relational(Tokenizer *tz, BasicInterpreter *interp) {
 static Value parse_expression(Tokenizer *tz, BasicInterpreter *interp) {
   return parse_relational(tz, interp);
 }
-

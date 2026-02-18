@@ -1,0 +1,9 @@
+10 REM entire line comment
+20 PRINT 1: REM inline comment : PRINT 999
+30 PRINT 2 ' apostrophe inline comment
+40 ' apostrophe full-line comment
+50 REM DATA 123
+60 DATA 7
+70 ' DATA 456
+80 READ A: PRINT A
+RUN
