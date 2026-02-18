@@ -227,6 +227,36 @@ PRINT "HI ";NAME$
 
 `INPUT` prints `? ` and waits for a line of text.
 
+## Lesson 12: Screen drawing (like old-school graphics)
+
+These commands draw on the virtual screen:
+
+- `CLS` clears the screen.
+- `COLOR` picks foreground/background colors.
+- `PRINT@ row,column,text` prints at a position.
+- `PLOT row,column,ch` places one character.
+- `LINE row0,col0,row1,col1,ch` draws a line.
+
+### YOU TYPE
+```basic
+NEW
+10 CLS
+20 COLOR 2,4
+30 PRINT@ 2,3,"HI"
+40 PLOT 2,4,"X"
+50 LINE 3,1,3,6,"-"
+RUN
+```
+
+### YOU SEE (fallback mode)
+```text
+SCREEN 2   HI
+SCREEN 2   HX
+SCREEN 3 ------
+```
+
+If you run in a real ANSI terminal, the screen drawing appears visually instead of `SCREEN ...` lines.
+
 ## Tiny challenge set
 
 Try these next:
@@ -242,10 +272,12 @@ All `YOU TYPE` and `YOU SEE` examples in this manual were verified against this 
 
 ```sh
 ./build/basic < tests/cases/manual_tutorial.in
+BASIC_SCREEN_FALLBACK=1 ./build/basic < tests/cases/manual_screen.in
 ```
 
 and checked by the automated test case:
 
 - `tests/cases/manual_tutorial.in`
 - `tests/cases/manual_tutorial.out`
-
+- `tests/cases/manual_screen.in` (with `BASIC_SCREEN_FALLBACK=1`)
+- `tests/cases/manual_screen.out`
