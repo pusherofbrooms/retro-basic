@@ -261,7 +261,8 @@ static Value parse_mul(Tokenizer *tz, BasicInterpreter *interp) {
   Value left = parse_power(tz, interp);
   while (token_is(tz, TOK_OP, "*") || token_is(tz, TOK_OP, "/")) {
     char op[2];
-    strncpy(op, tz->current.text, sizeof(op));
+    op[0] = tz->current.text[0];
+    op[1] = '\0';
     tokenizer_next(tz);
     Value right = parse_power(tz, interp);
     if (left.type == VAL_NUMBER && right.type == VAL_NUMBER) {
@@ -286,7 +287,8 @@ static Value parse_add(Tokenizer *tz, BasicInterpreter *interp) {
   Value left = parse_mul(tz, interp);
   while (token_is(tz, TOK_OP, "+") || token_is(tz, TOK_OP, "-")) {
     char op[2];
-    strncpy(op, tz->current.text, sizeof(op));
+    op[0] = tz->current.text[0];
+    op[1] = '\0';
     tokenizer_next(tz);
     Value right = parse_mul(tz, interp);
     if (strcmp(op, "+") == 0) {
@@ -332,7 +334,9 @@ static Value parse_relational(Tokenizer *tz, BasicInterpreter *interp) {
   while (token_is(tz, TOK_OP, "=") || token_is(tz, TOK_OP, "<>") || token_is(tz, TOK_OP, "<") ||
          token_is(tz, TOK_OP, "<=") || token_is(tz, TOK_OP, ">") || token_is(tz, TOK_OP, ">=")) {
     char op[3];
-    strncpy(op, tz->current.text, sizeof(op));
+    op[0] = tz->current.text[0];
+    op[1] = tz->current.text[1] == '\0' ? '\0' : tz->current.text[1];
+    op[2] = '\0';
     tokenizer_next(tz);
     Value right = parse_add(tz, interp);
     int result = 0;
