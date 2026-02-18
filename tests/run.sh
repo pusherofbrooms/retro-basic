@@ -26,6 +26,8 @@ run_case() {
 run_case "basic_flow" "tests/cases/basic_flow.in" "tests/cases/basic_flow.out"
 run_case "data_read" "tests/cases/data_read.in" "tests/cases/data_read.out"
 run_case "load_program" "tests/cases/load_program.in" "tests/cases/load_program.out"
+run_case "save_program" "tests/cases/save_program.in" "tests/cases/save_program.out"
+run_case "list_ranges" "tests/cases/list_ranges.in" "tests/cases/list_ranges.out"
 run_case "arg_overflow" "tests/cases/arg_overflow.in" "tests/cases/arg_overflow.out"
 run_case "exponent_assoc" "tests/cases/exponent_assoc.in" "tests/cases/exponent_assoc.out"
 run_case "for_validation" "tests/cases/for_validation.in" "tests/cases/for_validation.out"

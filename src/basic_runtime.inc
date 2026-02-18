@@ -85,6 +85,9 @@ static void reset_runtime(BasicInterpreter *interp, int reset_variables) {
   }
 }
 
+static int basic_save_file(BasicInterpreter *interp, const char *path);
+static void basic_list_filtered(BasicInterpreter *interp, int has_start, int start_line, int has_end, int end_line);
+
 static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index);
 
 static void execute_statement_list(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
@@ -669,7 +672,50 @@ static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *n
   }
   if (token_is(tz, TOK_IDENT, "LIST")) {
     tokenizer_next(tz);
-    basic_list(interp);
+    if (tz->current.type == TOK_EOF) {
+      basic_list(interp);
+      return;
+    }
+
+    int has_start = 0;
+    int has_end = 0;
+    int start_line = 0;
+    int end_line = 0;
+
+    if (tz->current.type == TOK_NUMBER) {
+      has_start = 1;
+      start_line = (int)tz->current.number;
+      tokenizer_next(tz);
+    }
+
+    if (token_is(tz, TOK_OP, "-")) {
+      tokenizer_next(tz);
+      if (tz->current.type == TOK_NUMBER) {
+        has_end = 1;
+        end_line = (int)tz->current.number;
+        tokenizer_next(tz);
+      } else if (tz->current.type != TOK_EOF) {
+        runtime_error(interp, "SYNTAX ERROR");
+        return;
+      }
+      if (!has_start && !has_end) {
+        runtime_error(interp, "SYNTAX ERROR");
+        return;
+      }
+    } else {
+      if (!has_start || tz->current.type != TOK_EOF) {
+        runtime_error(interp, "SYNTAX ERROR");
+        return;
+      }
+      has_end = 1;
+      end_line = start_line;
+    }
+
+    if (tz->current.type != TOK_EOF) {
+      runtime_error(interp, "SYNTAX ERROR");
+      return;
+    }
+    basic_list_filtered(interp, has_start, start_line, has_end, end_line);
     return;
   }
   if (token_is(tz, TOK_IDENT, "NEW")) {
@@ -691,6 +737,18 @@ static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *n
       return;
     }
     basic_load_file(interp, path_val.string, 1);
+    value_free(&path_val);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "SAVE")) {
+    tokenizer_next(tz);
+    Value path_val = parse_expression(tz, interp);
+    if (path_val.type != VAL_STRING) {
+      value_free(&path_val);
+      runtime_error(interp, "TYPE MISMATCH");
+      return;
+    }
+    basic_save_file(interp, path_val.string);
     value_free(&path_val);
     return;
   }
@@ -755,7 +813,18 @@ void basic_destroy(BasicInterpreter *interp) {
 }
 
 void basic_list(BasicInterpreter *interp) {
+  basic_list_filtered(interp, 0, 0, 0, 0);
+}
+
+static void basic_list_filtered(BasicInterpreter *interp, int has_start, int start_line, int has_end, int end_line) {
   for (size_t i = 0; i < interp->program.count; i++) {
+    int line_number = interp->program.lines[i].number;
+    if (has_start && line_number < start_line) {
+      continue;
+    }
+    if (has_end && line_number > end_line) {
+      continue;
+    }
     printf("%d %s\n", interp->program.lines[i].number, interp->program.lines[i].text);
   }
 }
@@ -795,6 +864,34 @@ int basic_load_file(BasicInterpreter *interp, const char *path, int replace_prog
     program_set_line(&interp->program, number, cursor);
   }
   fclose(file);
+  return 1;
+}
+
+static int basic_save_file(BasicInterpreter *interp, const char *path) {
+  FILE *file = fopen(path, "w");
+  if (!file) {
+    runtime_error(interp, "FILE ERROR");
+    print_error(interp);
+    interp->error = 0;
+    return 0;
+  }
+
+  for (size_t i = 0; i < interp->program.count; i++) {
+    if (fprintf(file, "%d %s\n", interp->program.lines[i].number, interp->program.lines[i].text) < 0) {
+      fclose(file);
+      runtime_error(interp, "FILE ERROR");
+      print_error(interp);
+      interp->error = 0;
+      return 0;
+    }
+  }
+
+  if (fclose(file) != 0) {
+    runtime_error(interp, "FILE ERROR");
+    print_error(interp);
+    interp->error = 0;
+    return 0;
+  }
   return 1;
 }
 

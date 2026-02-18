@@ -1,0 +1,6 @@
+10 PRINT "SAVED"
+20 PRINT 6*7
+SAVE "build/tests-save.bas"
+NEW
+LOAD "build/tests-save.bas"
+RUN
