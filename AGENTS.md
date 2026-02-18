@@ -64,7 +64,65 @@ Functions
 - Tokenization and expression precedence unit tests
 - Golden program output tests
 - Error case coverage (undefined line, type mismatch, out of data)
+- Static analysis: `make lint`
+- Memory checks: `make test-mem`
 
 ## Build and Run
 - Build: `make build/basic`
 - Run: `./build/basic`
+- Nix dev shell: `nix develop`
+- Nix build: `nix build` (binary at `./result/bin/basic`)
+
+## Task Tracking With Beads
+Use `beads` (`bd`) as the project task tracker with dependency-aware issues.
+
+### Setup
+- Check installation health first: `bd doctor`
+- Initialize in this repo (one-time): `bd init`
+- Confirm active database location: `bd where`
+
+### Daily Workflow
+- Create a task: `bd create "Implement tokenizer line storage"`
+- Quick-capture a task and return only ID: `bd q "Fix FOR/NEXT edge case"`
+- List open work: `bd list`
+- Show work ready to pick up (no blockers): `bd ready`
+- Inspect one task: `bd show <id>`
+- Update status/fields: `bd update <id> ...` or `bd set-state <id> in_progress`
+- Close when done: `bd close <id>`
+
+### Dependencies and Planning
+- Block one task on another: `bd dep add <blocked-id> <blocking-id>`
+- Visualize dependency graph: `bd graph`
+- Find currently blocked tasks: `bd blocked`
+
+### Recommended Conventions
+- Keep one issue per concrete, testable change.
+- Represent phase work (from the implementation plan above) as epics with child tasks.
+- Encode ordering with dependencies instead of long checklist comments.
+- Before starting new work, run `bd ready` and pick from unblocked tasks.
+
+## Landing the Plane (Session Completion)
+
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   bd sync
+   git push
+   git status  # MUST show "up to date with origin"
+   ```
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Provide context for next session
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - that leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If push fails, resolve and retry until it succeeds

@@ -10,6 +10,20 @@ make build/basic
 
 The binary will be at `build/basic`.
 
+### Nix
+
+```sh
+nix develop
+make build/basic
+```
+
+Or build/package directly with:
+
+```sh
+nix build
+./result/bin/basic
+```
+
 ## Run
 
 ```sh
@@ -60,7 +74,20 @@ RUN
 scripts/run-tests.sh
 ```
 
+Static analysis:
+
+```sh
+make lint
+```
+
+Valgrind memcheck path:
+
+```sh
+make test-mem
+```
+
 ## Notes
 
 - Plain-text program files only (no tokenized storage).
 - Variables are multi-letter and case-insensitive; `$` suffix denotes strings.
+- `RUN` resets variables and arrays before execution (C64-style) while keeping the stored program.

@@ -1,0 +1,2 @@
+10 PRINT LEFT$("ABCDE",1,2,3,4)
+RUN
