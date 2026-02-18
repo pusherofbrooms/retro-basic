@@ -86,6 +86,8 @@ Valgrind memcheck path:
 make test-mem
 ```
 
+On macOS (Darwin), `make test-mem` is skipped with a message because this workflow does not support valgrind there.
+
 ## Notes
 
 - Plain-text program files only (no tokenized storage).

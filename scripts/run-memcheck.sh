@@ -6,6 +6,11 @@ cd "$ROOT_DIR"
 
 : "${VALGRIND:=valgrind}"
 
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  echo "Memcheck skipped on Darwin: valgrind is not supported in this workflow."
+  exit 0
+fi
+
 if ! command -v "$VALGRIND" >/dev/null 2>&1; then
   echo "$VALGRIND not found"
   exit 1
