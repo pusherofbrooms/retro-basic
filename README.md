@@ -49,6 +49,15 @@ LOAD "tests/fixtures/sample.bas"
 RUN
 ```
 
+### Example (Screen Mode)
+
+```
+LOAD "tests/fixtures/screen_demo.bas"
+RUN
+```
+
+The demo program uses `CLS`, `LOCATE`, `COLOR`, `PRINT@`, `PLOT`, `LINE`, and `GETKEY$`.
+
 ## Features (with short examples)
 
 - Line-numbered program mode: `10 PRINT "HELLO"`
@@ -70,8 +79,12 @@ RUN
 - Random control: `RANDOMIZE 42 : PRINT RND(1), RND(0), RND(-7)`
 - String functions: `PRINT LEFT$("HELLO", 2)`, `PRINT LEN("HI")`
 - Program control: `RUN`, `CONT`, `LIST`, `NEW`, `END`, `STOP`
+- LIST ranges: `LIST 100-200`, `LIST 100-`, `LIST -200`
 - Tracing: `TRON` / `TROFF`
 - LOAD from file: `LOAD "path/to/program.bas"`
+- SAVE to file: `SAVE "path/to/program.bas"`
+- Key input functions: `INKEY$()` (non-blocking), `GETKEY$()` (blocking with line-input fallback)
+- Screen commands: `CLS`, `LOCATE 5,10`, `COLOR 14,4`, `PRINT@ 3,2,"HI"`, `PLOT 10,20,"*"`, `LINE 2,2,2,20,"-"`
 
 ## Tests
 
@@ -98,3 +111,8 @@ On macOS (Darwin), `make test-mem` is skipped with a message because this workfl
 - Plain-text program files only (no tokenized storage).
 - Variables are multi-letter and case-insensitive; `$` suffix denotes strings.
 - `RUN` resets variables and arrays before execution (C64-style) while keeping the stored program.
+- Screen coordinates are 1-based integers: row 1, column 1 is top-left.
+- Screen output modes:
+  - ANSI-capable TTY: cursor/color drawing is rendered directly.
+  - Non-ANSI or redirected output: screen redraw is suppressed by default.
+  - Optional fallback: set `BASIC_SCREEN_FALLBACK=1` to emit row diffs as `SCREEN <row> <text>`.

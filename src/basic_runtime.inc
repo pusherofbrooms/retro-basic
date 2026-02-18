@@ -77,6 +77,8 @@ static void reset_runtime(BasicInterpreter *interp, int reset_variables) {
   interp->error = 0;
   interp->error_msg[0] = '\0';
   interp->data.cursor = 0;
+  interp->key_line_pos = 0;
+  interp->key_line_len = 0;
   for_stack_free(interp);
   gosub_stack_free(interp);
   if (reset_variables) {
@@ -184,7 +186,7 @@ static void execute_print(Tokenizer *tz, BasicInterpreter *interp) {
       continue;
     }
     if (tz->current.type == TOK_COMMA) {
-      printf(" ");
+      basic_terminal_write(interp->terminal, " ");
       tokenizer_next(tz);
       continue;
     }
@@ -194,14 +196,14 @@ static void execute_print(Tokenizer *tz, BasicInterpreter *interp) {
       return;
     }
     if (val.type == VAL_STRING) {
-      printf("%s", val.string ? val.string : "");
+      basic_terminal_printf(interp->terminal, "%s", val.string ? val.string : "");
     } else {
-      printf("%g", val.number);
+      basic_terminal_printf(interp->terminal, "%g", val.number);
     }
     value_free(&val);
     newline = 1;
     if (tz->current.type == TOK_COMMA) {
-      printf(" ");
+      basic_terminal_write(interp->terminal, " ");
       tokenizer_next(tz);
     } else if (tz->current.type == TOK_SEMICOLON) {
       newline = 0;
@@ -211,14 +213,16 @@ static void execute_print(Tokenizer *tz, BasicInterpreter *interp) {
     }
   }
   if (newline) {
-    printf("\n");
+    basic_terminal_write(interp->terminal, "\n");
   }
+  basic_terminal_flush(interp->terminal);
 }
 
 static void execute_input(Tokenizer *tz, BasicInterpreter *interp) {
   char line[512];
-  printf("? ");
-  if (!fgets(line, sizeof(line), stdin)) {
+  basic_terminal_write(interp->terminal, "? ");
+  basic_terminal_flush(interp->terminal);
+  if (!basic_terminal_read_line(interp->terminal, line, sizeof(line))) {
     runtime_error(interp, "INPUT ERROR");
     return;
   }
@@ -288,6 +292,249 @@ static void execute_input(Tokenizer *tz, BasicInterpreter *interp) {
     }
     break;
   }
+}
+
+static int parse_row_column_args(Tokenizer *tz, BasicInterpreter *interp, int *row, int *column) {
+  Value row_val = parse_expression(tz, interp);
+  Value col_val;
+  if (interp->error) {
+    value_free(&row_val);
+    return 0;
+  }
+  if (row_val.type != VAL_NUMBER) {
+    value_free(&row_val);
+    runtime_error(interp, "TYPE MISMATCH");
+    return 0;
+  }
+  if (!token_is(tz, TOK_COMMA, NULL)) {
+    value_free(&row_val);
+    runtime_error(interp, "SYNTAX ERROR");
+    return 0;
+  }
+  tokenizer_next(tz);
+  col_val = parse_expression(tz, interp);
+  if (interp->error) {
+    value_free(&row_val);
+    value_free(&col_val);
+    return 0;
+  }
+  if (col_val.type != VAL_NUMBER) {
+    value_free(&row_val);
+    value_free(&col_val);
+    runtime_error(interp, "TYPE MISMATCH");
+    return 0;
+  }
+  *row = (int)row_val.number;
+  *column = (int)col_val.number;
+  value_free(&row_val);
+  value_free(&col_val);
+  return 1;
+}
+
+static void execute_cls(BasicInterpreter *interp) {
+  basic_screen_clear(interp->screen);
+  basic_terminal_clear(interp->terminal);
+  basic_terminal_flush(interp->terminal);
+}
+
+static void execute_locate(Tokenizer *tz, BasicInterpreter *interp) {
+  int row = 1;
+  int column = 1;
+  if (!parse_row_column_args(tz, interp, &row, &column)) {
+    return;
+  }
+  basic_screen_set_cursor(interp->screen, row, column);
+  basic_terminal_move(interp->terminal, row, column);
+  basic_terminal_flush(interp->terminal);
+}
+
+static void execute_color(Tokenizer *tz, BasicInterpreter *interp) {
+  Value fg_val = parse_expression(tz, interp);
+  Value bg_val;
+  int fg;
+  int bg = -1;
+  if (interp->error) {
+    value_free(&fg_val);
+    return;
+  }
+  if (fg_val.type != VAL_NUMBER) {
+    value_free(&fg_val);
+    runtime_error(interp, "TYPE MISMATCH");
+    return;
+  }
+  fg = (int)fg_val.number;
+  value_free(&fg_val);
+
+  if (token_is(tz, TOK_COMMA, NULL)) {
+    tokenizer_next(tz);
+    bg_val = parse_expression(tz, interp);
+    if (interp->error) {
+      value_free(&bg_val);
+      return;
+    }
+    if (bg_val.type != VAL_NUMBER) {
+      value_free(&bg_val);
+      runtime_error(interp, "TYPE MISMATCH");
+      return;
+    }
+    bg = (int)bg_val.number;
+    value_free(&bg_val);
+  }
+
+  basic_screen_set_color(interp->screen, fg, bg);
+  basic_terminal_color(interp->terminal, fg, bg);
+  basic_terminal_flush(interp->terminal);
+}
+
+static void execute_print_at(Tokenizer *tz, BasicInterpreter *interp) {
+  int row = 1;
+  int column = 1;
+  int newline = 1;
+  if (!parse_row_column_args(tz, interp, &row, &column)) {
+    return;
+  }
+
+  basic_screen_set_cursor(interp->screen, row, column);
+  if (token_is(tz, TOK_COMMA, NULL)) {
+    tokenizer_next(tz);
+  }
+
+  while (tz->current.type != TOK_EOF && tz->current.type != TOK_COLON) {
+    if (tz->current.type == TOK_SEMICOLON) {
+      newline = 0;
+      tokenizer_next(tz);
+      continue;
+    }
+    if (tz->current.type == TOK_COMMA) {
+      basic_screen_write_char(interp->screen, ' ');
+      tokenizer_next(tz);
+      continue;
+    }
+
+    Value val = parse_expression(tz, interp);
+    if (interp->error) {
+      value_free(&val);
+      return;
+    }
+    if (val.type == VAL_STRING) {
+      basic_screen_write_text(interp->screen, val.string ? val.string : "");
+    } else {
+      char number_text[64];
+      snprintf(number_text, sizeof(number_text), "%g", val.number);
+      basic_screen_write_text(interp->screen, number_text);
+    }
+    value_free(&val);
+    newline = 1;
+    if (tz->current.type == TOK_COMMA) {
+      basic_screen_write_char(interp->screen, ' ');
+      tokenizer_next(tz);
+    } else if (tz->current.type == TOK_SEMICOLON) {
+      newline = 0;
+      tokenizer_next(tz);
+    } else {
+      break;
+    }
+  }
+  if (newline) {
+    basic_screen_write_char(interp->screen, '\n');
+  }
+  basic_screen_present(interp->screen, interp->terminal);
+}
+
+static char screen_command_char(Value *value) {
+  char result = '*';
+  if (value->type == VAL_STRING) {
+    if (value->string && value->string[0] != '\0') {
+      result = value->string[0];
+    }
+    return result;
+  }
+  result = (char)((int)value->number & 0xFF);
+  if (result == '\0') {
+    result = '*';
+  }
+  return result;
+}
+
+static void execute_plot(Tokenizer *tz, BasicInterpreter *interp) {
+  int row = 1;
+  int column = 1;
+  char ch = '*';
+  if (!parse_row_column_args(tz, interp, &row, &column)) {
+    return;
+  }
+  if (token_is(tz, TOK_COMMA, NULL)) {
+    Value char_val;
+    tokenizer_next(tz);
+    char_val = parse_expression(tz, interp);
+    if (interp->error) {
+      value_free(&char_val);
+      return;
+    }
+    ch = screen_command_char(&char_val);
+    value_free(&char_val);
+  }
+  basic_screen_put(interp->screen, row, column, ch);
+  basic_screen_present(interp->screen, interp->terminal);
+}
+
+static void execute_line(Tokenizer *tz, BasicInterpreter *interp) {
+  int row0 = 1;
+  int col0 = 1;
+  int row1 = 1;
+  int col1 = 1;
+  int dr;
+  int dc;
+  int step_r;
+  int step_c;
+  int err;
+  char ch = '*';
+  if (!parse_row_column_args(tz, interp, &row0, &col0)) {
+    return;
+  }
+  if (!token_is(tz, TOK_COMMA, NULL)) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  tokenizer_next(tz);
+  if (!parse_row_column_args(tz, interp, &row1, &col1)) {
+    return;
+  }
+  if (token_is(tz, TOK_COMMA, NULL)) {
+    Value char_val;
+    tokenizer_next(tz);
+    char_val = parse_expression(tz, interp);
+    if (interp->error) {
+      value_free(&char_val);
+      return;
+    }
+    ch = screen_command_char(&char_val);
+    value_free(&char_val);
+  }
+
+  dr = abs(row1 - row0);
+  dc = abs(col1 - col0);
+  step_r = row0 < row1 ? 1 : -1;
+  step_c = col0 < col1 ? 1 : -1;
+  err = (dr > dc ? dr : -dc) / 2;
+
+  while (1) {
+    int err2;
+    basic_screen_put(interp->screen, row0, col0, ch);
+    if (row0 == row1 && col0 == col1) {
+      break;
+    }
+    err2 = err;
+    if (err2 > -dr) {
+      err -= dc;
+      row0 += step_r;
+    }
+    if (err2 < dc) {
+      err += dr;
+      col0 += step_c;
+    }
+  }
+  basic_screen_present(interp->screen, interp->terminal);
 }
 
 static void execute_let(Tokenizer *tz, BasicInterpreter *interp) {
@@ -711,7 +958,37 @@ static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *n
   }
   if (token_is(tz, TOK_IDENT, "PRINT")) {
     tokenizer_next(tz);
+    if (token_is(tz, TOK_OP, "@")) {
+      tokenizer_next(tz);
+      execute_print_at(tz, interp);
+      return;
+    }
     execute_print(tz, interp);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "CLS")) {
+    tokenizer_next(tz);
+    execute_cls(interp);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "LOCATE")) {
+    tokenizer_next(tz);
+    execute_locate(tz, interp);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "COLOR")) {
+    tokenizer_next(tz);
+    execute_color(tz, interp);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "PLOT")) {
+    tokenizer_next(tz);
+    execute_plot(tz, interp);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "LINE")) {
+    tokenizer_next(tz);
+    execute_line(tz, interp);
     return;
   }
   if (token_is(tz, TOK_IDENT, "INPUT")) {
@@ -975,6 +1252,17 @@ BasicInterpreter *basic_create(void) {
   if (!interp) {
     return NULL;
   }
+  interp->terminal = basic_terminal_create_stdio();
+  if (!interp->terminal) {
+    free(interp);
+    return NULL;
+  }
+  interp->screen = basic_screen_create(80, 25);
+  if (!interp->screen) {
+    basic_terminal_destroy(interp->terminal);
+    free(interp);
+    return NULL;
+  }
   program_init(&interp->program);
   interp->vars = NULL;
   interp->arrays = NULL;
@@ -999,6 +1287,8 @@ void basic_destroy(BasicInterpreter *interp) {
   for_stack_free(interp);
   gosub_stack_free(interp);
   data_list_free(&interp->data);
+  basic_screen_destroy(interp->screen);
+  basic_terminal_destroy(interp->terminal);
   free(interp);
 }
 
@@ -1015,8 +1305,9 @@ static void basic_list_filtered(BasicInterpreter *interp, int has_start, int sta
     if (has_end && line_number > end_line) {
       continue;
     }
-    printf("%d %s\n", interp->program.lines[i].number, interp->program.lines[i].text);
+    basic_terminal_printf(interp->terminal, "%d %s\n", interp->program.lines[i].number, interp->program.lines[i].text);
   }
+  basic_terminal_flush(interp->terminal);
 }
 
 void basic_new(BasicInterpreter *interp) {
@@ -1028,6 +1319,8 @@ void basic_new(BasicInterpreter *interp) {
   data_list_free(&interp->data);
   interp->can_continue = 0;
   interp->continue_index = 0;
+  interp->key_line_pos = 0;
+  interp->key_line_len = 0;
 }
 
 int basic_load_file(BasicInterpreter *interp, const char *path, int replace_program) {
@@ -1097,7 +1390,7 @@ static void run_from_index(BasicInterpreter *interp, size_t index) {
     ProgramLine *line = &interp->program.lines[index];
     interp->current_line_number = line->number;
     if (interp->trace_enabled) {
-      printf("TRACE %d\n", line->number);
+      basic_terminal_printf(interp->terminal, "TRACE %d\n", line->number);
     }
     size_t next_index = index + 1;
     Tokenizer tz;
@@ -1151,7 +1444,7 @@ static void execute_immediate(BasicInterpreter *interp, const char *input) {
 
 void basic_repl(BasicInterpreter *interp) {
   char line[1024];
-  while (fgets(line, sizeof(line), stdin)) {
+  while (basic_terminal_read_line(interp->terminal, line, sizeof(line))) {
     char *newline = strchr(line, '\n');
     if (newline) {
       *newline = '\0';

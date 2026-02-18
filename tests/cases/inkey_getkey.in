@@ -1,0 +1,6 @@
+10 A$ = INKEY$()
+20 PRINT LEN(A$)
+30 B$ = GETKEY$()
+40 PRINT B$
+RUN
+X

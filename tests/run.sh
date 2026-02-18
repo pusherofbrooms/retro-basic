@@ -23,6 +23,22 @@ run_case() {
   fi
 }
 
+run_case_env() {
+  local name="$1"
+  local env_var="$2"
+  local input_file="$3"
+  local expected_file="$4"
+  local output
+
+  output=$(env "$env_var" ./build/basic < "$input_file")
+  if ! diff -u "$expected_file" - <<<"$output"; then
+    echo "[FAIL] $name"
+    failures=$((failures + 1))
+  else
+    echo "[PASS] $name"
+  fi
+}
+
 run_case "basic_flow" "tests/cases/basic_flow.in" "tests/cases/basic_flow.out"
 run_case "data_read" "tests/cases/data_read.in" "tests/cases/data_read.out"
 run_case "load_program" "tests/cases/load_program.in" "tests/cases/load_program.out"
@@ -39,6 +55,9 @@ run_case "on_dispatch" "tests/cases/on_dispatch.in" "tests/cases/on_dispatch.out
 run_case "def_fn" "tests/cases/def_fn.in" "tests/cases/def_fn.out"
 run_case "tracing" "tests/cases/tracing.in" "tests/cases/tracing.out"
 run_case "cont" "tests/cases/cont.in" "tests/cases/cont.out"
+run_case "inkey_getkey" "tests/cases/inkey_getkey.in" "tests/cases/inkey_getkey.out"
+run_case "screen_cmds" "tests/cases/screen_cmds.in" "tests/cases/screen_cmds.out"
+run_case_env "screen_fallback" "BASIC_SCREEN_FALLBACK=1" "tests/cases/screen_fallback.in" "tests/cases/screen_fallback.out"
 
 if [[ $failures -ne 0 ]]; then
   echo "$failures test(s) failed."

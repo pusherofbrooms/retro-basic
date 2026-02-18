@@ -4,8 +4,8 @@ LDFLAGS ?= -lm
 CLANG_TIDY ?= clang-tidy
 VALGRIND ?= valgrind
 
-SRC = src/main.c src/basic.c
-OBJ = build/main.o build/basic.o
+SRC = src/main.c src/basic.c src/terminal.c src/screen.c
+OBJ = build/main.o build/basic.o build/terminal.o build/screen.o
 DEP = $(OBJ:.o=.d)
 
 build/basic: $(OBJ)
@@ -21,7 +21,7 @@ test: build/basic
 
 lint:
 	@command -v $(CLANG_TIDY) >/dev/null 2>&1 || { echo "$(CLANG_TIDY) not found"; exit 1; }
-	$(CLANG_TIDY) src/main.c src/basic.c -- -std=c99 -Isrc
+	$(CLANG_TIDY) $(SRC) -- -std=c99 -Isrc
 
 test-mem: build/basic
 	@VALGRIND="$(VALGRIND)" ./scripts/run-memcheck.sh

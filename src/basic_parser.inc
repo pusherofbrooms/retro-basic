@@ -41,6 +41,7 @@ static Value parse_primary(Tokenizer *tz, BasicInterpreter *interp) {
 
       if (strcmp(name, "LEFT$") == 0 || strcmp(name, "MID$") == 0 || strcmp(name, "RIGHT$") == 0 ||
           strcmp(name, "LEN") == 0 || strcmp(name, "ASC") == 0 || strcmp(name, "CHR$") == 0 ||
+          strcmp(name, "INKEY$") == 0 || strcmp(name, "GETKEY$") == 0 ||
           strcmp(name, "ABS") == 0 || strcmp(name, "INT") == 0 || strcmp(name, "RND") == 0 ||
           strcmp(name, "SIN") == 0 || strcmp(name, "COS") == 0 || strcmp(name, "TAN") == 0 ||
           strcmp(name, "SQR") == 0 || strcmp(name, "LOG") == 0 || strcmp(name, "EXP") == 0 ||
@@ -129,6 +130,20 @@ static Value parse_primary(Tokenizer *tz, BasicInterpreter *interp) {
         } else if (strcmp(name, "CHR$") == 0) {
           char ch = (char)((int)args[0].number & 0xFF);
           result = value_string(&ch, 1);
+        } else if (strcmp(name, "INKEY$") == 0) {
+          char ch;
+          if (basic_read_key(interp, 0, &ch)) {
+            result = value_string(&ch, 1);
+          } else {
+            result = value_string("", 0);
+          }
+        } else if (strcmp(name, "GETKEY$") == 0) {
+          char ch;
+          if (basic_read_key(interp, 1, &ch)) {
+            result = value_string(&ch, 1);
+          } else {
+            result = value_string("", 0);
+          }
         } else if (strcmp(name, "ABS") == 0) {
           result = value_number(fabsf(args[0].number));
         } else if (strcmp(name, "INT") == 0) {

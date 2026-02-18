@@ -1,4 +1,6 @@
 #include "basic.h"
+#include "screen.h"
+#include "terminal.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -124,6 +126,11 @@ struct BasicInterpreter {
   int rng_seeded;
   float rnd_last;
   int rnd_has_last;
+  BasicTerminal *terminal;
+  BasicScreen *screen;
+  char key_line[512];
+  size_t key_line_pos;
+  size_t key_line_len;
 };
 
 static void value_free(Value *value) {
@@ -480,6 +487,7 @@ static void tokenizer_next(Tokenizer *tz) {
     case '*':
     case '/':
     case '^':
+    case '@':
       tz->current.type = TOK_OP;
       tz->current.text[0] = c;
       tz->current.text[1] = '\0';
@@ -511,10 +519,82 @@ static void print_error(BasicInterpreter *interp) {
     return;
   }
   if (interp->in_program) {
-    printf("%s IN %d\n", interp->error_msg, interp->current_line_number);
+    basic_terminal_printf(interp->terminal, "%s IN %d\n", interp->error_msg, interp->current_line_number);
   } else {
-    printf("%s\n", interp->error_msg);
+    basic_terminal_printf(interp->terminal, "%s\n", interp->error_msg);
   }
+  basic_terminal_flush(interp->terminal);
+}
+
+static int key_buffer_take(BasicInterpreter *interp, char *out) {
+  if (interp->key_line_pos >= interp->key_line_len) {
+    interp->key_line_pos = 0;
+    interp->key_line_len = 0;
+    return 0;
+  }
+  *out = interp->key_line[interp->key_line_pos++];
+  if (interp->key_line_pos >= interp->key_line_len) {
+    interp->key_line_pos = 0;
+    interp->key_line_len = 0;
+  }
+  return 1;
+}
+
+static int key_buffer_fill_from_line(BasicInterpreter *interp) {
+  char line[sizeof(interp->key_line)];
+  char *newline;
+  size_t len;
+
+  if (!basic_terminal_read_line(interp->terminal, line, sizeof(line))) {
+    return 0;
+  }
+
+  newline = strchr(line, '\n');
+  if (newline) {
+    *newline = '\0';
+  }
+
+  len = strlen(line);
+  if (len == 0) {
+    return 0;
+  }
+  if (len > sizeof(interp->key_line)) {
+    len = sizeof(interp->key_line);
+  }
+  memcpy(interp->key_line, line, len);
+  interp->key_line_len = len;
+  interp->key_line_pos = 0;
+  return 1;
+}
+
+static int basic_read_key(BasicInterpreter *interp, int blocking, char *out) {
+  int status;
+
+  if (key_buffer_take(interp, out)) {
+    return 1;
+  }
+
+  status = basic_terminal_read_key_nonblocking(interp->terminal, out);
+  if (status == 1) {
+    return 1;
+  }
+  if (!blocking) {
+    return 0;
+  }
+
+  if (status == 0) {
+    status = basic_terminal_read_key_blocking(interp->terminal, out);
+    if (status == 1) {
+      return 1;
+    }
+  }
+
+  while (interp->key_line_len == 0) {
+    if (!key_buffer_fill_from_line(interp)) {
+      return 0;
+    }
+  }
+  return key_buffer_take(interp, out);
 }
 
 static char *value_to_string(const Value *value) {
@@ -702,6 +782,11 @@ static int builtin_arity(const char *name, size_t *min_args, size_t *max_args) {
   if (strcmp(name, "MID$") == 0) {
     *min_args = 2;
     *max_args = 3;
+    return 1;
+  }
+  if (strcmp(name, "INKEY$") == 0 || strcmp(name, "GETKEY$") == 0) {
+    *min_args = 0;
+    *max_args = 0;
     return 1;
   }
   if (strcmp(name, "RND") == 0) {
