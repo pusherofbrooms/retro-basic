@@ -1,5 +1,5 @@
 CC ?= cc
-CFLAGS ?= -std=c99 -Wall -Wextra -Werror -O2
+CFLAGS ?= -std=c99 -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L
 LDFLAGS ?= -lm
 CLANG_TIDY ?= clang-tidy
 VALGRIND ?= valgrind
