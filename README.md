@@ -2,6 +2,8 @@
 
 This is a pragmatic, C64-inspired BASIC interpreter written in C. It supports line-numbered programs, immediate mode, classic control flow, and a plain-text `LOAD` command.
 
+Want a kid-friendly, C64-manual-style walkthrough? See [`MANUAL.md`](MANUAL.md).
+
 ## Build
 
 ```sh
