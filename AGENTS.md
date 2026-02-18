@@ -87,13 +87,17 @@ Use `beads` (`bd`) as the project task tracker with dependency-aware issues.
 - List open work: `bd list`
 - Show work ready to pick up (no blockers): `bd ready`
 - Inspect one task: `bd show <id>`
-- Update status/fields: `bd update <id> ...` or `bd set-state <id> in_progress`
+- Update status/fields: `bd update <id> --status in_progress` (or other `bd update` flags)
+- Use `bd set-state` only for dimensioned operational state labels, e.g. `bd set-state <id> mode=in_progress`
 - Close when done: `bd close <id>`
 
 ### Dependencies and Planning
 - Block one task on another: `bd dep add <blocked-id> <blocking-id>`
-- Visualize dependency graph: `bd graph`
+- Visualize dependency graph: `bd graph <issue-id>`
 - Find currently blocked tasks: `bd blocked`
+
+### Sync Prerequisite
+- Ensure `.beads/issues.jsonl` is tracked by git (not ignored in global excludes or `.git/info/exclude`) before relying on `bd sync`.
 
 ### Recommended Conventions
 - Keep one issue per concrete, testable change.
@@ -117,6 +121,7 @@ Use `beads` (`bd`) as the project task tracker with dependency-aware issues.
    git push
    git status  # MUST show "up to date with origin"
    ```
+   If no remote/upstream is configured yet, document this explicitly in handoff as `push blocked: no remote configured`, and stop after commit + clean `git status`.
 5. **Clean up** - Clear stashes, prune remote branches
 6. **Verify** - All changes committed AND pushed
 7. **Hand off** - Provide context for next session
