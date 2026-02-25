@@ -65,10 +65,10 @@ The demo program uses `CLS`, `LOCATE`, `COLOR`, `PRINT@`, `PLOT`, `LINE`, and `G
 - Line-numbered program mode: `10 PRINT "HELLO"`
 - Immediate mode: `PRINT 2+2`
 - Assignment (`LET` optional): `LET A = 10` / `A = 10`
-- PRINT with separators: `PRINT "A"; 1, 2`
-- INPUT: `INPUT NAME$`
+- PRINT with separators/helpers: `PRINT "A"; 1, 2`, `PRINT "A";TAB(10);"B"`, `PRINT "X";SPC(3);"Y"`
+- INPUT: `INPUT NAME$` and prompt form `INPUT "NAME? "; NAME$`
 - IF/THEN (line target): `IF A > 3 THEN 100`
-- IF/THEN (inline statement): `IF A > 3 THEN PRINT "OK"`
+- IF/THEN/ELSE: `IF A > 3 THEN PRINT "OK" ELSE PRINT "NO"`
 - GOTO: `GOTO 200`
 - GOSUB/RETURN: `GOSUB 900` / `RETURN`
 - ON dispatch: `ON X GOTO 100,200` / `ON X GOSUB 500,600`
@@ -76,12 +76,13 @@ The demo program uses `CLS`, `LOCATE`, `COLOR`, `PRINT@`, `PLOT`, `LINE`, and `G
 - FOR/NEXT: `FOR I = 1 TO 3 : PRINT I : NEXT I`
 - DATA/READ/RESTORE: `DATA 1, "HI" : READ A, B$ : RESTORE`
 - Comments: `REM THIS IS A COMMENT` and `' SHORTHAND COMMENT`
-- DIM arrays: `DIM A(10) : A(3) = 7`
-- Numeric functions: `PRINT ABS(-2)`, `PRINT SQR(9)`
+- DIM arrays (1D/2D): `DIM A(10) : A(3) = 7`, `DIM M(2,3) : M(1,2)=42`
+- Numeric/boolean expressions: `PRINT ABS(-2)`, `PRINT SQR(9)`, `PRINT NOT 0`, `PRINT 1 AND 0`, `PRINT 1 OR 0`
 - Random control: `RANDOMIZE 42 : PRINT RND(1), RND(0), RND(-7)`
 - String functions: `PRINT LEFT$("HELLO", 2)`, `PRINT LEN("HI")`
 - Program control: `RUN`, `CONT`, `LIST`, `NEW`, `END`, `STOP`
 - LIST ranges: `LIST 100-200`, `LIST 100-`, `LIST -200`
+- Program editing helpers: `DELETE 100-200`, `FIND "PRINT"`
 - Tracing: `TRON` / `TROFF`
 - LOAD from file: `LOAD "path/to/program.bas"`
 - SAVE to file: `SAVE "path/to/program.bas"`
@@ -114,6 +115,7 @@ On macOS (Darwin), `make test-mem` is skipped with a message because this workfl
 - Variables are multi-letter and case-insensitive; `$` suffix denotes strings.
 - `RUN` resets variables and arrays before execution (C64-style) while keeping the stored program.
 - Screen coordinates are 1-based integers: row 1, column 1 is top-left.
+- Optional error context: set `BASIC_ERROR_CONTEXT=1` to append token column info (for example, `SYNTAX ERROR IN 100 AT COLUMN 9`).
 - Screen output modes:
   - ANSI-capable TTY: cursor/color drawing is rendered directly.
   - Non-ANSI or redirected output: screen redraw is suppressed by default.

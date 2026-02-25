@@ -1,4 +1,5 @@
-static int parse_variable_target(Tokenizer *tz, BasicInterpreter *interp, char *out_name, size_t out_size, int *is_array, int *index) {
+static int parse_variable_target(Tokenizer *tz, BasicInterpreter *interp, char *out_name, size_t out_size,
+                                 int *is_array, int *index1, int *has_index2, int *index2) {
   if (tz->current.type != TOK_IDENT) {
     runtime_error(interp, "SYNTAX ERROR");
     return 0;
@@ -8,18 +9,32 @@ static int parse_variable_target(Tokenizer *tz, BasicInterpreter *interp, char *
   tokenizer_next(tz);
   if (token_is(tz, TOK_LPAREN, NULL)) {
     *is_array = 1;
+    *has_index2 = 0;
+    *index2 = 0;
+
     tokenizer_next(tz);
     Value idx_val = parse_expression(tz, interp);
+    *index1 = (int)idx_val.number;
+    value_free(&idx_val);
+
+    if (token_is(tz, TOK_COMMA, NULL)) {
+      tokenizer_next(tz);
+      Value idx2_val = parse_expression(tz, interp);
+      *has_index2 = 1;
+      *index2 = (int)idx2_val.number;
+      value_free(&idx2_val);
+    }
+
     if (!token_is(tz, TOK_RPAREN, NULL)) {
       runtime_error(interp, "SYNTAX ERROR");
-    } else {
-      tokenizer_next(tz);
+      return 0;
     }
-    *index = (int)idx_val.number;
-    value_free(&idx_val);
+    tokenizer_next(tz);
   } else {
     *is_array = 0;
-    *index = 0;
+    *index1 = 0;
+    *has_index2 = 0;
+    *index2 = 0;
   }
   return 1;
 }
@@ -215,7 +230,7 @@ static void execute_statement_list(Tokenizer *tz, BasicInterpreter *interp, size
       return;
     }
     if (tz->current.type != TOK_EOF && tz->current.type != TOK_COLON) {
-      runtime_error(interp, "SYNTAX ERROR");
+      runtime_error_at_token(interp, tz, "SYNTAX ERROR");
       return;
     }
     if (tz->current.type == TOK_COLON) {
@@ -232,7 +247,7 @@ static void execute_statement_list_until_else(Tokenizer *tz, BasicInterpreter *i
     int line_number = (int)tz->current.number;
     tokenizer_next(tz);
     if (tz->current.type != TOK_EOF && !(stop_at_else && token_is(tz, TOK_IDENT, "ELSE"))) {
-      runtime_error(interp, "SYNTAX ERROR");
+      runtime_error_at_token(interp, tz, "SYNTAX ERROR");
       return;
     }
     execute_goto(interp, next_line_index, line_number);
@@ -251,7 +266,7 @@ static void execute_statement_list_until_else(Tokenizer *tz, BasicInterpreter *i
       return;
     }
     if (tz->current.type != TOK_EOF && tz->current.type != TOK_COLON) {
-      runtime_error(interp, "SYNTAX ERROR");
+      runtime_error_at_token(interp, tz, "SYNTAX ERROR");
       return;
     }
     if (tz->current.type == TOK_COLON) {
@@ -264,6 +279,8 @@ static void execute_statement_list_until_else(Tokenizer *tz, BasicInterpreter *i
 
 static void execute_print(Tokenizer *tz, BasicInterpreter *interp) {
   int newline = 1;
+  int column = 1;
+
   while (tz->current.type != TOK_EOF && tz->current.type != TOK_COLON) {
     if (tz->current.type == TOK_SEMICOLON) {
       newline = 0;
@@ -272,23 +289,82 @@ static void execute_print(Tokenizer *tz, BasicInterpreter *interp) {
     }
     if (tz->current.type == TOK_COMMA) {
       basic_terminal_write(interp->terminal, " ");
+      column++;
       tokenizer_next(tz);
       continue;
     }
-    Value val = parse_expression(tz, interp);
-    if (interp->error) {
-      value_free(&val);
-      return;
-    }
-    if (val.type == VAL_STRING) {
-      basic_terminal_printf(interp->terminal, "%s", val.string ? val.string : "");
+
+    if (token_is(tz, TOK_IDENT, "TAB") || token_is(tz, TOK_IDENT, "SPC")) {
+      int is_tab = token_is(tz, TOK_IDENT, "TAB");
+      int spaces;
+      tokenizer_next(tz);
+      if (!token_is(tz, TOK_LPAREN, NULL)) {
+        runtime_error(interp, "SYNTAX ERROR");
+        return;
+      }
+      tokenizer_next(tz);
+      Value arg = parse_expression(tz, interp);
+      if (interp->error) {
+        value_free(&arg);
+        return;
+      }
+      if (arg.type != VAL_NUMBER) {
+        value_free(&arg);
+        runtime_error(interp, "TYPE MISMATCH");
+        return;
+      }
+      if (!token_is(tz, TOK_RPAREN, NULL)) {
+        value_free(&arg);
+        runtime_error(interp, "SYNTAX ERROR");
+        return;
+      }
+      tokenizer_next(tz);
+
+      if (is_tab) {
+        int target_column = (int)arg.number;
+        if (target_column < 1) {
+          target_column = 1;
+        }
+        spaces = target_column - column;
+        if (spaces <= 0) {
+          spaces = 1;
+        }
+      } else {
+        spaces = (int)arg.number;
+        if (spaces < 0) {
+          spaces = 0;
+        }
+      }
+      value_free(&arg);
+
+      for (int i = 0; i < spaces; i++) {
+        basic_terminal_write(interp->terminal, " ");
+      }
+      column += spaces;
+      newline = 1;
     } else {
-      basic_terminal_printf(interp->terminal, "%g", val.number);
+      Value val = parse_expression(tz, interp);
+      if (interp->error) {
+        value_free(&val);
+        return;
+      }
+      if (val.type == VAL_STRING) {
+        const char *text = val.string ? val.string : "";
+        basic_terminal_printf(interp->terminal, "%s", text);
+        column += (int)strlen(text);
+      } else {
+        char number_text[64];
+        snprintf(number_text, sizeof(number_text), "%g", val.number);
+        basic_terminal_write(interp->terminal, number_text);
+        column += (int)strlen(number_text);
+      }
+      value_free(&val);
+      newline = 1;
     }
-    value_free(&val);
-    newline = 1;
+
     if (tz->current.type == TOK_COMMA) {
       basic_terminal_write(interp->terminal, " ");
+      column++;
       tokenizer_next(tz);
     } else if (tz->current.type == TOK_SEMICOLON) {
       newline = 0;
@@ -305,7 +381,25 @@ static void execute_print(Tokenizer *tz, BasicInterpreter *interp) {
 
 static void execute_input(Tokenizer *tz, BasicInterpreter *interp) {
   char line[512];
-  basic_terminal_write(interp->terminal, "? ");
+  char prompt[256] = "? ";
+
+  if (tz->current.type == TOK_STRING) {
+    strncpy(prompt, tz->current.string, sizeof(prompt));
+    prompt[sizeof(prompt) - 1] = '\0';
+    tokenizer_next(tz);
+    if (tz->current.type != TOK_SEMICOLON && tz->current.type != TOK_COMMA) {
+      runtime_error(interp, "SYNTAX ERROR");
+      return;
+    }
+    tokenizer_next(tz);
+  }
+
+  if (tz->current.type == TOK_EOF) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+
+  basic_terminal_write(interp->terminal, prompt);
   basic_terminal_flush(interp->terminal);
   if (!basic_terminal_read_line(interp->terminal, line, sizeof(line))) {
     runtime_error(interp, "INPUT ERROR");
@@ -320,8 +414,10 @@ static void execute_input(Tokenizer *tz, BasicInterpreter *interp) {
   while (tz->current.type != TOK_EOF) {
     char name[128];
     int is_array = 0;
-    int index = 0;
-    if (!parse_variable_target(tz, interp, name, sizeof(name), &is_array, &index)) {
+    int index1 = 0;
+    int has_index2 = 0;
+    int index2 = 0;
+    if (!parse_variable_target(tz, interp, name, sizeof(name), &is_array, &index1, &has_index2, &index2)) {
       return;
     }
     char *field = cursor;
@@ -353,13 +449,14 @@ static void execute_input(Tokenizer *tz, BasicInterpreter *interp) {
 
     if (is_array) {
       Array *array = arrays_find(interp, name);
-      if (!array || index < 0 || (size_t)index >= array->size) {
+      size_t linear_index = 0;
+      if (!array || !array_resolve_index(array, index1, has_index2, index2, &linear_index)) {
         value_free(&value);
         runtime_error(interp, "BAD SUBSCRIPT");
         return;
       }
-      value_free(&array->values[index]);
-      array->values[index] = value;
+      value_free(&array->values[linear_index]);
+      array->values[linear_index] = value;
     } else {
       Variable *var = vars_get(interp, name, 1);
       if (!var) {
@@ -625,8 +722,10 @@ static void execute_line(Tokenizer *tz, BasicInterpreter *interp) {
 static void execute_let(Tokenizer *tz, BasicInterpreter *interp) {
   char name[128];
   int is_array = 0;
-  int index = 0;
-  if (!parse_variable_target(tz, interp, name, sizeof(name), &is_array, &index)) {
+  int index1 = 0;
+  int has_index2 = 0;
+  int index2 = 0;
+  if (!parse_variable_target(tz, interp, name, sizeof(name), &is_array, &index1, &has_index2, &index2)) {
     return;
   }
   if (!token_is(tz, TOK_OP, "=")) {
@@ -642,12 +741,13 @@ static void execute_let(Tokenizer *tz, BasicInterpreter *interp) {
   int is_string = name[strlen(name) - 1] == '$';
   if (is_array) {
     Array *array = arrays_find(interp, name);
+    size_t linear_index = 0;
     if (!array) {
       value_free(&value);
       runtime_error(interp, "UNDEF'D STATEMENT");
       return;
     }
-    if (index < 0 || (size_t)index >= array->size) {
+    if (!array_resolve_index(array, index1, has_index2, index2, &linear_index)) {
       value_free(&value);
       runtime_error(interp, "BAD SUBSCRIPT");
       return;
@@ -662,8 +762,8 @@ static void execute_let(Tokenizer *tz, BasicInterpreter *interp) {
       runtime_error(interp, "TYPE MISMATCH");
       return;
     }
-    value_free(&array->values[index]);
-    array->values[index] = value;
+    value_free(&array->values[linear_index]);
+    array->values[linear_index] = value;
   } else {
     Variable *var = vars_get(interp, name, 1);
     if (!var) {
@@ -798,8 +898,10 @@ static void execute_on(Tokenizer *tz, BasicInterpreter *interp, size_t *next_lin
 static void execute_for(Tokenizer *tz, BasicInterpreter *interp, size_t current_index) {
   char name[128];
   int is_array = 0;
-  int index = 0;
-  if (!parse_variable_target(tz, interp, name, sizeof(name), &is_array, &index)) {
+  int index1 = 0;
+  int has_index2 = 0;
+  int index2 = 0;
+  if (!parse_variable_target(tz, interp, name, sizeof(name), &is_array, &index1, &has_index2, &index2)) {
     return;
   }
   if (is_array) {
@@ -938,35 +1040,56 @@ static void execute_dim(Tokenizer *tz, BasicInterpreter *interp) {
       return;
     }
     tokenizer_next(tz);
-    Value size_val = parse_expression(tz, interp);
+    Value size1_val = parse_expression(tz, interp);
+    int size1 = (int)size1_val.number;
+    int has_second_dim = 0;
+    int size2 = 0;
+
+    if (token_is(tz, TOK_COMMA, NULL)) {
+      tokenizer_next(tz);
+      Value size2_val = parse_expression(tz, interp);
+      has_second_dim = 1;
+      size2 = (int)size2_val.number;
+      value_free(&size2_val);
+    }
+
     if (!token_is(tz, TOK_RPAREN, NULL)) {
-      value_free(&size_val);
+      value_free(&size1_val);
       runtime_error(interp, "SYNTAX ERROR");
       return;
     }
     tokenizer_next(tz);
-    int size = (int)size_val.number;
-    if (size < 0) size = 0;
+
+    if (size1 < 0) size1 = 0;
+    if (size2 < 0) size2 = 0;
+
     Array *array = arrays_get(interp, name, 1, name[strlen(name) - 1] == '$');
     if (!array) {
-      value_free(&size_val);
+      value_free(&size1_val);
       runtime_error(interp, "OUT OF MEMORY");
       return;
     }
+
     for (size_t i = 0; i < array->size; i++) {
       value_free(&array->values[i]);
     }
     free(array->values);
-    array->size = (size_t)size + 1;
+
+    array->dim_count = has_second_dim ? 2 : 1;
+    array->dim1 = (size_t)size1 + 1;
+    array->dim2 = has_second_dim ? (size_t)size2 + 1 : 0;
+    array->size = has_second_dim ? array->dim1 * array->dim2 : array->dim1;
+
     array->values = (Value *)calloc(array->size, sizeof(Value));
     if (!array->values) {
+      value_free(&size1_val);
       runtime_error(interp, "OUT OF MEMORY");
       return;
     }
     for (size_t i = 0; i < array->size; i++) {
       array->values[i] = array->is_string ? value_string("", 0) : value_number(0.0f);
     }
-    value_free(&size_val);
+    value_free(&size1_val);
     if (tz->current.type == TOK_COMMA) {
       tokenizer_next(tz);
       continue;
@@ -979,8 +1102,10 @@ static void execute_read(Tokenizer *tz, BasicInterpreter *interp) {
   while (tz->current.type != TOK_EOF) {
     char name[128];
     int is_array = 0;
-    int index = 0;
-    if (!parse_variable_target(tz, interp, name, sizeof(name), &is_array, &index)) {
+    int index1 = 0;
+    int has_index2 = 0;
+    int index2 = 0;
+    if (!parse_variable_target(tz, interp, name, sizeof(name), &is_array, &index1, &has_index2, &index2)) {
       return;
     }
     if (interp->data.cursor >= interp->data.count) {
@@ -991,7 +1116,8 @@ static void execute_read(Tokenizer *tz, BasicInterpreter *interp) {
     int is_string = name[strlen(name) - 1] == '$';
     if (is_array) {
       Array *array = arrays_find(interp, name);
-      if (!array || index < 0 || (size_t)index >= array->size) {
+      size_t linear_index = 0;
+      if (!array || !array_resolve_index(array, index1, has_index2, index2, &linear_index)) {
         value_free(&value);
         runtime_error(interp, "BAD SUBSCRIPT");
         return;
@@ -1006,8 +1132,8 @@ static void execute_read(Tokenizer *tz, BasicInterpreter *interp) {
         runtime_error(interp, "TYPE MISMATCH");
         return;
       }
-      value_free(&array->values[index]);
-      array->values[index] = value;
+      value_free(&array->values[linear_index]);
+      array->values[linear_index] = value;
     } else {
       Variable *var = vars_get(interp, name, 1);
       if (!var) {
@@ -1368,6 +1494,8 @@ BasicInterpreter *basic_create(void) {
   interp->data.count = 0;
   interp->data.capacity = 0;
   interp->data.cursor = 0;
+  const char *error_context = getenv("BASIC_ERROR_CONTEXT");
+  interp->error_context_enabled = (error_context && error_context[0] != '\0' && strcmp(error_context, "0") != 0);
   return interp;
 }
 

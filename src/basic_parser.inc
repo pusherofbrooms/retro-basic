@@ -183,24 +183,37 @@ static Value parse_primary(Tokenizer *tz, BasicInterpreter *interp) {
         return result;
       }
 
-      Value index_val = parse_expression(tz, interp);
+      Value index1_val = parse_expression(tz, interp);
+      int index1 = (int)index1_val.number;
+      int has_index2 = 0;
+      int index2 = 0;
+      value_free(&index1_val);
+
+      if (token_is(tz, TOK_COMMA, NULL)) {
+        tokenizer_next(tz);
+        Value index2_val = parse_expression(tz, interp);
+        has_index2 = 1;
+        index2 = (int)index2_val.number;
+        value_free(&index2_val);
+      }
+
       if (!token_is(tz, TOK_RPAREN, NULL)) {
         runtime_error(interp, "SYNTAX ERROR");
       } else {
         tokenizer_next(tz);
       }
-      int idx = (int)index_val.number;
-      value_free(&index_val);
+
       Array *array = arrays_find(interp, name);
       if (!array) {
         runtime_error(interp, "UNDEF'D STATEMENT");
         return value_number(0.0f);
       }
-      if (idx < 0 || (size_t)idx >= array->size) {
+      size_t linear_index = 0;
+      if (!array_resolve_index(array, index1, has_index2, index2, &linear_index)) {
         runtime_error(interp, "BAD SUBSCRIPT");
         return value_number(0.0f);
       }
-      return value_copy(&array->values[idx]);
+      return value_copy(&array->values[linear_index]);
     }
 
     Variable *var = vars_get(interp, name, 1);

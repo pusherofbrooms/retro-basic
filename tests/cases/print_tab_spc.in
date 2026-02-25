@@ -1,0 +1,2 @@
+PRINT "A";TAB(5);"B"
+PRINT "X";SPC(3);"Y"

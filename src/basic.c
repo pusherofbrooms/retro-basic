@@ -31,6 +31,9 @@ typedef struct {
   char *name;
   int is_string;
   size_t size;
+  size_t dim_count;
+  size_t dim1;
+  size_t dim2;
   Value *values;
 } Array;
 
@@ -127,6 +130,9 @@ struct BasicInterpreter {
   int stop;
   int error;
   char error_msg[128];
+  int error_has_column;
+  size_t error_column;
+  int error_context_enabled;
   int in_program;
   int current_line_number;
   int can_continue;
@@ -360,6 +366,9 @@ static Array *arrays_get(BasicInterpreter *interp, const char *name, int create,
   interp->arrays[interp->array_count].name = strdup(name);
   interp->arrays[interp->array_count].is_string = is_string;
   interp->arrays[interp->array_count].size = 0;
+  interp->arrays[interp->array_count].dim_count = 0;
+  interp->arrays[interp->array_count].dim1 = 0;
+  interp->arrays[interp->array_count].dim2 = 0;
   interp->arrays[interp->array_count].values = NULL;
   return &interp->arrays[interp->array_count++];
 }
@@ -378,6 +387,31 @@ static void arrays_free(BasicInterpreter *interp) {
   interp->arrays = NULL;
   interp->array_count = 0;
   interp->array_capacity = 0;
+}
+
+static int array_resolve_index(const Array *array, int index1, int has_index2, int index2, size_t *out_index) {
+  if (!array || array->dim_count == 0) {
+    return 0;
+  }
+
+  if (array->dim_count == 1) {
+    if (has_index2 || index1 < 0 || (size_t)index1 >= array->dim1) {
+      return 0;
+    }
+    *out_index = (size_t)index1;
+    return 1;
+  }
+
+  if (array->dim_count == 2) {
+    if (!has_index2 || index1 < 0 || index2 < 0 ||
+        (size_t)index1 >= array->dim1 || (size_t)index2 >= array->dim2) {
+      return 0;
+    }
+    *out_index = (size_t)index1 * array->dim2 + (size_t)index2;
+    return 1;
+  }
+
+  return 0;
 }
 
 static void for_stack_free(BasicInterpreter *interp) {
@@ -620,8 +654,19 @@ static int token_is(Tokenizer *tz, TokenType type, const char *text) {
 
 static void runtime_error(BasicInterpreter *interp, const char *message) {
   interp->error = 1;
+  interp->error_has_column = 0;
+  interp->error_column = 0;
   strncpy(interp->error_msg, message, sizeof(interp->error_msg) - 1);
   interp->error_msg[sizeof(interp->error_msg) - 1] = '\0';
+}
+
+static void runtime_error_at_token(BasicInterpreter *interp, Tokenizer *tz, const char *message) {
+  runtime_error(interp, message);
+  if (!interp->error_context_enabled || !tz) {
+    return;
+  }
+  interp->error_has_column = 1;
+  interp->error_column = tz->token_start + 1;
 }
 
 static void print_error(BasicInterpreter *interp) {
@@ -629,9 +674,18 @@ static void print_error(BasicInterpreter *interp) {
     return;
   }
   if (interp->in_program) {
-    basic_terminal_printf(interp->terminal, "%s IN %d\n", interp->error_msg, interp->current_line_number);
+    if (interp->error_context_enabled && interp->error_has_column) {
+      basic_terminal_printf(interp->terminal, "%s IN %d AT COLUMN %zu\n",
+                           interp->error_msg, interp->current_line_number, interp->error_column);
+    } else {
+      basic_terminal_printf(interp->terminal, "%s IN %d\n", interp->error_msg, interp->current_line_number);
+    }
   } else {
-    basic_terminal_printf(interp->terminal, "%s\n", interp->error_msg);
+    if (interp->error_context_enabled && interp->error_has_column) {
+      basic_terminal_printf(interp->terminal, "%s AT COLUMN %zu\n", interp->error_msg, interp->error_column);
+    } else {
+      basic_terminal_printf(interp->terminal, "%s\n", interp->error_msg);
+    }
   }
   basic_terminal_flush(interp->terminal);
 }

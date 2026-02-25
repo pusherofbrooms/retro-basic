@@ -1,0 +1,4 @@
+10 INPUT "NAME? ";N$
+20 PRINT "HI ";N$
+RUN
+Ada

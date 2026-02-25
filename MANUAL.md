@@ -69,16 +69,19 @@ RUN
 ```basic
 NEW
 10 SCORE=7
-20 IF SCORE>=5 THEN PRINT "LEVEL UP"
+20 IF SCORE>=5 THEN PRINT "LEVEL UP" ELSE PRINT "TRY AGAIN"
+30 PRINT NOT 0, 1 AND 0, 1 OR 0
 RUN
 ```
 
 ### YOU SEE
 ```text
 LEVEL UP
+1 0 1
 ```
 
 Variables remember values, and `IF` lets your program make choices.
+You can also use boolean operators: `NOT`, `AND`, and `OR`.
 
 ## Lesson 4: Subroutines (`GOSUB` / `RETURN`)
 
@@ -145,6 +148,7 @@ RUN
 
 `DIM` creates an array. Here we store several numbers under one name (`N`).
 Array indexes are 1-based in this interpreter (`N(1)`, `N(2)`, ...).
+You can also dimension 2D arrays, for example: `DIM M(2,3) : M(1,2)=42 : PRINT M(1,2)`.
 
 ## Lesson 7: Make your own function
 
@@ -232,15 +236,20 @@ Now your program lives in a file and can come back later.
 INPUT NAME$
 Ada
 PRINT "HI ";NAME$
+INPUT "NAME? ";NAME$
+Ada
+PRINT "HI ";NAME$
 ```
 
 ### YOU SEE
 ```text
 ? HI Ada
+NAME? HI Ada
 ```
 
-`INPUT` prints `? ` and waits for a line of text.
-You type `Ada` after the prompt; in captured test output, typed input is not echoed.
+`INPUT` prints `? ` by default and waits for a line of text.
+You can also provide your own prompt text with `INPUT "...";VAR$`.
+In captured test output, typed input is not echoed.
 
 ## Lesson 12: Screen drawing (like old-school graphics)
 
@@ -305,9 +314,38 @@ HI
 
 `REM` (or `'`) adds comments. `TRON` shows each line as it runs; `TROFF` turns tracing off.
 
+## Lesson 14: Editing big programs and print spacing
+
+### YOU TYPE
+```basic
+NEW
+10 PRINT "HELLO"
+20 PRINT "REMOVE"
+30 REM PRINT hidden
+FIND "PRINT"
+DELETE 20-30
+LIST
+PRINT "A";TAB(5);"B"
+PRINT "X";SPC(3);"Y"
+```
+
+### YOU SEE
+```text
+10 PRINT "HELLO"
+20 PRINT "REMOVE"
+30 REM PRINT hidden
+10 PRINT "HELLO"
+A   B
+X   Y
+```
+
+Use `FIND "text"` to locate matching lines and `DELETE start-end` to remove ranges quickly.
+`TAB(n)` and `SPC(n)` are handy print-format helpers.
+
 ## Common errors (quick help)
 
 - `SYNTAX ERROR`: BASIC could not parse the line.
+  - Optional detail: set `BASIC_ERROR_CONTEXT=1` to include token column context (for example, `SYNTAX ERROR IN 20 AT COLUMN 9`).
 - `TYPE MISMATCH IN <line>`: number vs string values were mixed incorrectly.
 - `FILE NOT FOUND`: `LOAD` path does not exist.
 - `CAN'T CONTINUE`: `CONT` was used when no stopped program can resume.
@@ -323,8 +361,9 @@ Try these next:
 
 ## Mini command card
 
-- Program building: line numbers, `LIST`, `LIST 100-200`, `NEW`
+- Program building: line numbers, `LIST`, `LIST 100-200`, `DELETE 100-200`, `FIND "PRINT"`, `NEW`
 - Running and control: `RUN`, `STOP`, `CONT`, `END`
+- Input/output helpers: `INPUT "NAME? ";N$`, `PRINT "A";TAB(10);"B"`, `PRINT "X";SPC(3);"Y"`
 - Files: `SAVE "file.bas"`, `LOAD "file.bas"`
 - Comments/debugging: `REM ...`, `' ...`, `TRON`, `TROFF`
 
