@@ -92,7 +92,55 @@ static void reset_runtime(BasicInterpreter *interp, int reset_variables) {
 
 static int basic_save_file(BasicInterpreter *interp, const char *path);
 static void basic_list_filtered(BasicInterpreter *interp, int has_start, int start_line, int has_end, int end_line);
+static void basic_delete_filtered(BasicInterpreter *interp, int has_start, int start_line, int has_end, int end_line);
+static void basic_find_text(BasicInterpreter *interp, const char *needle);
+static int parse_line_range(Tokenizer *tz, BasicInterpreter *interp, int allow_single, int *has_start, int *start_line, int *has_end, int *end_line);
 static void basic_continue(BasicInterpreter *interp);
+
+static int parse_line_range(Tokenizer *tz, BasicInterpreter *interp, int allow_single,
+                            int *has_start, int *start_line, int *has_end, int *end_line) {
+  *has_start = 0;
+  *has_end = 0;
+  *start_line = 0;
+  *end_line = 0;
+
+  if (tz->current.type == TOK_NUMBER) {
+    *has_start = 1;
+    *start_line = (int)tz->current.number;
+    tokenizer_next(tz);
+  }
+
+  if (token_is(tz, TOK_OP, "-")) {
+    tokenizer_next(tz);
+    if (tz->current.type == TOK_NUMBER) {
+      *has_end = 1;
+      *end_line = (int)tz->current.number;
+      tokenizer_next(tz);
+    } else if (tz->current.type != TOK_EOF) {
+      runtime_error(interp, "SYNTAX ERROR");
+      return 0;
+    }
+    if (!*has_start && !*has_end) {
+      runtime_error(interp, "SYNTAX ERROR");
+      return 0;
+    }
+  } else if (*has_start && allow_single) {
+    *has_end = 1;
+    *end_line = *start_line;
+  }
+
+  if (!*has_start && !*has_end) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return 0;
+  }
+
+  if (tz->current.type != TOK_EOF) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return 0;
+  }
+
+  return 1;
+}
 
 static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index);
 
@@ -1135,41 +1183,43 @@ static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *n
     int has_end = 0;
     int start_line = 0;
     int end_line = 0;
-
-    if (tz->current.type == TOK_NUMBER) {
-      has_start = 1;
-      start_line = (int)tz->current.number;
-      tokenizer_next(tz);
-    }
-
-    if (token_is(tz, TOK_OP, "-")) {
-      tokenizer_next(tz);
-      if (tz->current.type == TOK_NUMBER) {
-        has_end = 1;
-        end_line = (int)tz->current.number;
-        tokenizer_next(tz);
-      } else if (tz->current.type != TOK_EOF) {
-        runtime_error(interp, "SYNTAX ERROR");
-        return;
-      }
-      if (!has_start && !has_end) {
-        runtime_error(interp, "SYNTAX ERROR");
-        return;
-      }
-    } else {
-      if (!has_start || tz->current.type != TOK_EOF) {
-        runtime_error(interp, "SYNTAX ERROR");
-        return;
-      }
-      has_end = 1;
-      end_line = start_line;
-    }
-
-    if (tz->current.type != TOK_EOF) {
-      runtime_error(interp, "SYNTAX ERROR");
+    if (!parse_line_range(tz, interp, 1, &has_start, &start_line, &has_end, &end_line)) {
       return;
     }
     basic_list_filtered(interp, has_start, start_line, has_end, end_line);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "DELETE")) {
+    tokenizer_next(tz);
+    int has_start = 0;
+    int has_end = 0;
+    int start_line = 0;
+    int end_line = 0;
+    if (!parse_line_range(tz, interp, 1, &has_start, &start_line, &has_end, &end_line)) {
+      return;
+    }
+    basic_delete_filtered(interp, has_start, start_line, has_end, end_line);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "FIND")) {
+    tokenizer_next(tz);
+    Value pattern = parse_expression(tz, interp);
+    if (interp->error) {
+      value_free(&pattern);
+      return;
+    }
+    if (pattern.type != VAL_STRING) {
+      value_free(&pattern);
+      runtime_error(interp, "TYPE MISMATCH");
+      return;
+    }
+    if (tz->current.type != TOK_EOF) {
+      value_free(&pattern);
+      runtime_error(interp, "SYNTAX ERROR");
+      return;
+    }
+    basic_find_text(interp, pattern.string ? pattern.string : "");
+    value_free(&pattern);
     return;
   }
   if (token_is(tz, TOK_IDENT, "NEW")) {
@@ -1227,7 +1277,9 @@ static void collect_data(BasicInterpreter *interp) {
   data_list_free(&interp->data);
   for (size_t i = 0; i < interp->program.count; i++) {
     Tokenizer tz;
-    tokenizer_init(&tz, interp->program.lines[i].text);
+    tokenizer_init_cached(&tz, interp->program.lines[i].text,
+                          interp->program.lines[i].tokens,
+                          interp->program.lines[i].token_count);
     tokenizer_next(&tz);
     while (tz.current.type != TOK_EOF) {
       if (token_is(&tz, TOK_IDENT, "REM")) {
@@ -1310,6 +1362,52 @@ static void basic_list_filtered(BasicInterpreter *interp, int has_start, int sta
   basic_terminal_flush(interp->terminal);
 }
 
+static void basic_delete_filtered(BasicInterpreter *interp, int has_start, int start_line, int has_end, int end_line) {
+  size_t i = 0;
+  while (i < interp->program.count) {
+    int line_number = interp->program.lines[i].number;
+    if (has_start && line_number < start_line) {
+      i++;
+      continue;
+    }
+    if (has_end && line_number > end_line) {
+      i++;
+      continue;
+    }
+    program_delete_line(&interp->program, i);
+  }
+}
+
+static int line_contains_text_case_insensitive(const char *line, const char *needle) {
+  size_t needle_len = strlen(needle);
+  if (needle_len == 0) {
+    return 1;
+  }
+
+  for (size_t i = 0; line[i] != '\0'; i++) {
+    size_t j = 0;
+    while (needle[j] != '\0' && line[i + j] != '\0' &&
+           toupper((unsigned char)line[i + j]) == toupper((unsigned char)needle[j])) {
+      j++;
+    }
+    if (j == needle_len) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static void basic_find_text(BasicInterpreter *interp, const char *needle) {
+  for (size_t i = 0; i < interp->program.count; i++) {
+    ProgramLine *line = &interp->program.lines[i];
+    if (line_contains_text_case_insensitive(line->text, needle)) {
+      basic_terminal_printf(interp->terminal, "%d %s\n", line->number, line->text);
+    }
+  }
+  basic_terminal_flush(interp->terminal);
+}
+
 void basic_new(BasicInterpreter *interp) {
   program_free(&interp->program);
   program_init(&interp->program);
@@ -1347,7 +1445,13 @@ int basic_load_file(BasicInterpreter *interp, const char *path, int replace_prog
     }
     int number = (int)strtol(cursor, &cursor, 10);
     while (isspace((unsigned char)*cursor)) cursor++;
-    program_set_line(&interp->program, number, cursor);
+    if (!program_set_line(&interp->program, number, cursor)) {
+      fclose(file);
+      runtime_error(interp, "SYNTAX ERROR");
+      print_error(interp);
+      interp->error = 0;
+      return 0;
+    }
   }
   fclose(file);
   return 1;
@@ -1394,7 +1498,7 @@ static void run_from_index(BasicInterpreter *interp, size_t index) {
     }
     size_t next_index = index + 1;
     Tokenizer tz;
-    tokenizer_init(&tz, line->text);
+    tokenizer_init_cached(&tz, line->text, line->tokens, line->token_count);
     tokenizer_next(&tz);
     execute_statement_list(&tz, interp, &next_index);
     if (interp->error) {
@@ -1457,7 +1561,11 @@ void basic_repl(BasicInterpreter *interp) {
     if (isdigit((unsigned char)*cursor)) {
       int number = (int)strtol(cursor, &cursor, 10);
       while (isspace((unsigned char)*cursor)) cursor++;
-      program_set_line(&interp->program, number, cursor);
+      if (!program_set_line(&interp->program, number, cursor)) {
+        runtime_error(interp, "SYNTAX ERROR");
+        print_error(interp);
+        interp->error = 0;
+      }
     } else {
       execute_immediate(interp, cursor);
     }

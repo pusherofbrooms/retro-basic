@@ -49,6 +49,8 @@ run_case "arg_overflow" "tests/cases/arg_overflow.in" "tests/cases/arg_overflow.
 run_case "exponent_assoc" "tests/cases/exponent_assoc.in" "tests/cases/exponent_assoc.out"
 run_case "for_validation" "tests/cases/for_validation.in" "tests/cases/for_validation.out"
 run_case "malformed_trailing" "tests/cases/malformed_trailing.in" "tests/cases/malformed_trailing.out"
+run_case "line_tokenize_validation" "tests/cases/line_tokenize_validation.in" "tests/cases/line_tokenize_validation.out"
+run_case "delete_find" "tests/cases/delete_find.in" "tests/cases/delete_find.out"
 run_case "run_reset" "tests/cases/run_reset.in" "tests/cases/run_reset.out"
 run_case "rnd_randomize" "tests/cases/rnd_randomize.in" "tests/cases/rnd_randomize.out"
 run_case "on_dispatch" "tests/cases/on_dispatch.in" "tests/cases/on_dispatch.out"

@@ -40,9 +40,13 @@ typedef struct {
   char *expr;
 } UserFunction;
 
+typedef struct Token Token;
+
 typedef struct {
   int number;
   char *text;
+  Token *tokens;
+  size_t token_count;
 } ProgramLine;
 
 typedef struct {
@@ -79,21 +83,27 @@ typedef enum {
   TOK_SEMICOLON,
   TOK_LPAREN,
   TOK_RPAREN,
-  TOK_COLON
+  TOK_COLON,
+  TOK_INVALID
 } TokenType;
 
-typedef struct {
+struct Token {
   TokenType type;
   char text[128];
   float number;
   char string[256];
-} Token;
+  size_t start;
+};
 
 typedef struct {
   const char *input;
   size_t pos;
   size_t token_start;
   Token current;
+  const Token *cached_tokens;
+  size_t cached_count;
+  size_t cached_index;
+  int use_cached_tokens;
 } Tokenizer;
 
 struct BasicInterpreter {
@@ -181,9 +191,19 @@ static void program_init(Program *program) {
   program->capacity = 0;
 }
 
+static int tokenize_line(const char *input, Token **out_tokens, size_t *out_count);
+
+static void program_line_free(ProgramLine *line) {
+  free(line->text);
+  free(line->tokens);
+  line->text = NULL;
+  line->tokens = NULL;
+  line->token_count = 0;
+}
+
 static void program_free(Program *program) {
   for (size_t i = 0; i < program->count; i++) {
-    free(program->lines[i].text);
+    program_line_free(&program->lines[i]);
   }
   free(program->lines);
   program->lines = NULL;
@@ -215,34 +235,49 @@ static void program_delete_line(Program *program, size_t index) {
   if (index >= program->count) {
     return;
   }
-  free(program->lines[index].text);
+  program_line_free(&program->lines[index]);
   for (size_t i = index + 1; i < program->count; i++) {
     program->lines[i - 1] = program->lines[i];
   }
   program->count--;
 }
 
-static void program_set_line(Program *program, int number, const char *text) {
+static int program_set_line(Program *program, int number, const char *text) {
   int found = 0;
   size_t index = program_find_index(program, number, &found);
   if (!text || text[0] == '\0') {
     if (found) {
       program_delete_line(program, index);
     }
-    return;
+    return 1;
+  }
+
+  char *new_text = strdup(text);
+  Token *new_tokens = NULL;
+  size_t new_token_count = 0;
+  if (!new_text) {
+    return 0;
+  }
+  if (!tokenize_line(text, &new_tokens, &new_token_count)) {
+    free(new_text);
+    return 0;
   }
 
   if (found) {
-    free(program->lines[index].text);
-    program->lines[index].text = strdup(text);
-    return;
+    program_line_free(&program->lines[index]);
+    program->lines[index].text = new_text;
+    program->lines[index].tokens = new_tokens;
+    program->lines[index].token_count = new_token_count;
+    return 1;
   }
 
   if (program->count == program->capacity) {
     size_t new_cap = program->capacity == 0 ? 16 : program->capacity * 2;
     ProgramLine *new_lines = (ProgramLine *)realloc(program->lines, new_cap * sizeof(ProgramLine));
     if (!new_lines) {
-      return;
+      free(new_text);
+      free(new_tokens);
+      return 0;
     }
     program->lines = new_lines;
     program->capacity = new_cap;
@@ -252,8 +287,11 @@ static void program_set_line(Program *program, int number, const char *text) {
     program->lines[i] = program->lines[i - 1];
   }
   program->lines[index].number = number;
-  program->lines[index].text = strdup(text);
+  program->lines[index].text = new_text;
+  program->lines[index].tokens = new_tokens;
+  program->lines[index].token_count = new_token_count;
   program->count++;
+  return 1;
 }
 
 static Variable *vars_find(BasicInterpreter *interp, const char *name) {
@@ -378,6 +416,18 @@ static void tokenizer_init(Tokenizer *tz, const char *input) {
   tz->current.text[0] = '\0';
   tz->current.string[0] = '\0';
   tz->current.number = 0.0f;
+  tz->current.start = 0;
+  tz->cached_tokens = NULL;
+  tz->cached_count = 0;
+  tz->cached_index = 0;
+  tz->use_cached_tokens = 0;
+}
+
+static void tokenizer_init_cached(Tokenizer *tz, const char *input, const Token *tokens, size_t token_count) {
+  tokenizer_init(tz, input);
+  tz->cached_tokens = tokens;
+  tz->cached_count = token_count;
+  tz->use_cached_tokens = 1;
 }
 
 static void tokenizer_skip_spaces(Tokenizer *tz) {
@@ -387,12 +437,24 @@ static void tokenizer_skip_spaces(Tokenizer *tz) {
 }
 
 static void tokenizer_next(Tokenizer *tz) {
+  if (tz->use_cached_tokens) {
+    if (tz->cached_index >= tz->cached_count) {
+      tz->current.type = TOK_EOF;
+      tz->token_start = tz->input ? strlen(tz->input) : 0;
+      return;
+    }
+    tz->current = tz->cached_tokens[tz->cached_index++];
+    tz->token_start = tz->current.start;
+    return;
+  }
+
   tokenizer_skip_spaces(tz);
   tz->token_start = tz->pos;
   char c = tz->input[tz->pos];
   tz->current.text[0] = '\0';
   tz->current.string[0] = '\0';
   tz->current.number = 0.0f;
+  tz->current.start = tz->token_start;
   if (c == '\0') {
     tz->current.type = TOK_EOF;
     return;
@@ -412,6 +474,12 @@ static void tokenizer_next(Tokenizer *tz) {
     while (tz->input[tz->pos] && tz->input[tz->pos] != '"') {
       tz->pos++;
     }
+    if (tz->input[tz->pos] != '"') {
+      tz->current.type = TOK_INVALID;
+      strncpy(tz->current.text, "UNTERMINATED STRING", sizeof(tz->current.text));
+      tz->current.text[sizeof(tz->current.text) - 1] = '\0';
+      return;
+    }
     size_t len = tz->pos - start;
     if (len >= sizeof(tz->current.string)) {
       len = sizeof(tz->current.string) - 1;
@@ -419,9 +487,13 @@ static void tokenizer_next(Tokenizer *tz) {
     memcpy(tz->current.string, tz->input + start, len);
     tz->current.string[len] = '\0';
     tz->current.type = TOK_STRING;
-    if (tz->input[tz->pos] == '"') {
-      tz->pos++;
-    }
+    tz->pos++;
+    return;
+  }
+
+  if (c == '\'') {
+    tz->current.type = TOK_EOF;
+    tz->pos = strlen(tz->input);
     return;
   }
 
@@ -470,6 +542,7 @@ static void tokenizer_next(Tokenizer *tz) {
       } else {
         strncpy(tz->current.text, "<", sizeof(tz->current.text));
       }
+      tz->current.text[sizeof(tz->current.text) - 1] = '\0';
       tz->current.type = TOK_OP;
       return;
     case '>':
@@ -479,6 +552,7 @@ static void tokenizer_next(Tokenizer *tz) {
       } else {
         strncpy(tz->current.text, ">", sizeof(tz->current.text));
       }
+      tz->current.text[sizeof(tz->current.text) - 1] = '\0';
       tz->current.type = TOK_OP;
       return;
     case '=':
@@ -493,9 +567,45 @@ static void tokenizer_next(Tokenizer *tz) {
       tz->current.text[1] = '\0';
       return;
     default:
-      tz->current.type = TOK_EOF;
+      tz->current.type = TOK_INVALID;
+      tz->current.text[0] = c;
+      tz->current.text[1] = '\0';
       return;
   }
+}
+
+static int tokenize_line(const char *input, Token **out_tokens, size_t *out_count) {
+  Tokenizer tz;
+  size_t count = 0;
+  size_t capacity = 0;
+  Token *tokens = NULL;
+
+  tokenizer_init(&tz, input);
+  while (1) {
+    tokenizer_next(&tz);
+    if (tz.current.type == TOK_INVALID) {
+      free(tokens);
+      return 0;
+    }
+    if (count == capacity) {
+      size_t new_capacity = capacity == 0 ? 16 : capacity * 2;
+      Token *new_tokens = (Token *)realloc(tokens, new_capacity * sizeof(Token));
+      if (!new_tokens) {
+        free(tokens);
+        return 0;
+      }
+      tokens = new_tokens;
+      capacity = new_capacity;
+    }
+    tokens[count++] = tz.current;
+    if (tz.current.type == TOK_EOF) {
+      break;
+    }
+  }
+
+  *out_tokens = tokens;
+  *out_count = count;
+  return 1;
 }
 
 static int token_is(Tokenizer *tz, TokenType type, const char *text) {
