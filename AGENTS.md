@@ -126,3 +126,4 @@ Use `beads` (`bd`) as the project task tracker with dependency-aware issues.
 - Represent larger initiatives as epics with child tasks.
 - Encode ordering with dependencies instead of long checklist comments.
 - Before starting new work, run `bd ready` and pick from unblocked tasks.
+- As tasks are completed, update any affected documentation (README, AGENTS, tests/docs comments, etc.) in the same change.
