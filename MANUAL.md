@@ -361,7 +361,7 @@ Try these next:
 
 ## Mini command card
 
-- Program building: line numbers, `LIST`, `LIST 100-200`, `DELETE 100-200`, `FIND "PRINT"`, `NEW`
+- Program building: line numbers, `LIST`, `LIST 100-200`, `DELETE 100-200`, `FIND "PRINT"`, `RENUM`, `RENUM 100,5`, `NEW`
 - Running and control: `RUN`, `STOP`, `CONT`, `END`
 - Input/output helpers: `INPUT "NAME? ";N$`, `PRINT "A";TAB(10);"B"`, `PRINT "X";SPC(3);"Y"`
 - Files: `SAVE "file.bas"`, `LOAD "file.bas"`

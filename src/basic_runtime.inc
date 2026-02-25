@@ -111,6 +111,7 @@ static void basic_delete_filtered(BasicInterpreter *interp, int has_start, int s
 static void basic_find_text(BasicInterpreter *interp, const char *needle);
 static int parse_line_range(Tokenizer *tz, BasicInterpreter *interp, int allow_single, int *has_start, int *start_line, int *has_end, int *end_line);
 static void basic_continue(BasicInterpreter *interp);
+static int basic_renum(BasicInterpreter *interp, int start_line, int step);
 
 static int parse_line_range(Tokenizer *tz, BasicInterpreter *interp, int allow_single,
                             int *has_start, int *start_line, int *has_end, int *end_line) {
@@ -154,6 +155,282 @@ static int parse_line_range(Tokenizer *tz, BasicInterpreter *interp, int allow_s
     return 0;
   }
 
+  return 1;
+}
+
+typedef enum {
+  RENUM_SCAN_NORMAL,
+  RENUM_SCAN_EXPECT_SINGLE,
+  RENUM_SCAN_ON_WAIT_DISPATCH,
+  RENUM_SCAN_ON_TARGETS
+} RenumScanMode;
+
+typedef struct {
+  size_t start;
+  size_t length;
+  int replacement;
+} RenumReplacement;
+
+static int renum_lookup_line(const int *old_numbers, const int *new_numbers, size_t count,
+                             int old_value, int *new_value) {
+  size_t left = 0;
+  size_t right = count;
+  while (left < right) {
+    size_t mid = left + (right - left) / 2;
+    if (old_numbers[mid] == old_value) {
+      *new_value = new_numbers[mid];
+      return 1;
+    }
+    if (old_numbers[mid] < old_value) {
+      left = mid + 1;
+    } else {
+      right = mid;
+    }
+  }
+  return 0;
+}
+
+static char *renum_rewrite_line_text(const ProgramLine *line,
+                                     const int *old_numbers,
+                                     const int *new_numbers,
+                                     size_t line_count) {
+  if (!line || !line->text || !line->tokens || line->token_count == 0) {
+    return strdup("");
+  }
+
+  RenumReplacement *repls = (RenumReplacement *)calloc(line->token_count, sizeof(RenumReplacement));
+  if (!repls) {
+    return NULL;
+  }
+
+  size_t repl_count = 0;
+  RenumScanMode mode = RENUM_SCAN_NORMAL;
+  int on_expect_number = 0;
+
+  for (size_t i = 0; i < line->token_count; i++) {
+    const Token *tok = &line->tokens[i];
+    int consumed = 0;
+
+    if (tok->type == TOK_EOF) {
+      break;
+    }
+
+    if (tok->type == TOK_COLON) {
+      mode = RENUM_SCAN_NORMAL;
+      on_expect_number = 0;
+      continue;
+    }
+
+    if (tok->type == TOK_IDENT && strcmp(tok->text, "REM") == 0) {
+      break;
+    }
+
+    if (mode == RENUM_SCAN_ON_WAIT_DISPATCH && tok->type == TOK_IDENT &&
+        (strcmp(tok->text, "GOTO") == 0 || strcmp(tok->text, "GOSUB") == 0)) {
+      mode = RENUM_SCAN_ON_TARGETS;
+      on_expect_number = 1;
+      consumed = 1;
+    } else if (mode == RENUM_SCAN_ON_TARGETS) {
+      if (tok->type == TOK_NUMBER && on_expect_number) {
+        int old_target = (int)tok->number;
+        int new_target = 0;
+        if (renum_lookup_line(old_numbers, new_numbers, line_count, old_target, &new_target) &&
+            new_target != old_target) {
+          const char *token_start = line->text + tok->start;
+          char *endptr = NULL;
+          strtof(token_start, &endptr);
+          if (endptr && endptr > token_start) {
+            repls[repl_count].start = tok->start;
+            repls[repl_count].length = (size_t)(endptr - token_start);
+            repls[repl_count].replacement = new_target;
+            repl_count++;
+          }
+        }
+        on_expect_number = 0;
+        consumed = 1;
+      } else if (tok->type == TOK_COMMA) {
+        on_expect_number = 1;
+        consumed = 1;
+      } else {
+        mode = RENUM_SCAN_NORMAL;
+        on_expect_number = 0;
+      }
+    }
+
+    if (mode == RENUM_SCAN_EXPECT_SINGLE) {
+      if (tok->type == TOK_NUMBER) {
+        int old_target = (int)tok->number;
+        int new_target = 0;
+        if (renum_lookup_line(old_numbers, new_numbers, line_count, old_target, &new_target) &&
+            new_target != old_target) {
+          const char *token_start = line->text + tok->start;
+          char *endptr = NULL;
+          strtof(token_start, &endptr);
+          if (endptr && endptr > token_start) {
+            repls[repl_count].start = tok->start;
+            repls[repl_count].length = (size_t)(endptr - token_start);
+            repls[repl_count].replacement = new_target;
+            repl_count++;
+          }
+        }
+        mode = RENUM_SCAN_NORMAL;
+        consumed = 1;
+      } else {
+        mode = RENUM_SCAN_NORMAL;
+      }
+    }
+
+    if (consumed) {
+      continue;
+    }
+
+    if (tok->type == TOK_IDENT && mode == RENUM_SCAN_NORMAL) {
+      if (strcmp(tok->text, "GOTO") == 0 || strcmp(tok->text, "GOSUB") == 0 ||
+          strcmp(tok->text, "THEN") == 0) {
+        mode = RENUM_SCAN_EXPECT_SINGLE;
+      } else if (strcmp(tok->text, "ON") == 0) {
+        mode = RENUM_SCAN_ON_WAIT_DISPATCH;
+      }
+    }
+  }
+
+  if (repl_count == 0) {
+    free(repls);
+    return strdup(line->text);
+  }
+
+  size_t original_len = strlen(line->text);
+  size_t new_len = original_len;
+  char number_buf[32];
+  for (size_t i = 0; i < repl_count; i++) {
+    int printed = snprintf(number_buf, sizeof(number_buf), "%d", repls[i].replacement);
+    if (printed < 0) {
+      free(repls);
+      return NULL;
+    }
+    new_len += (size_t)printed;
+    if (new_len < (size_t)printed || new_len < repls[i].length) {
+      free(repls);
+      return NULL;
+    }
+    new_len -= repls[i].length;
+  }
+
+  char *rewritten = (char *)malloc(new_len + 1);
+  if (!rewritten) {
+    free(repls);
+    return NULL;
+  }
+
+  size_t src_cursor = 0;
+  size_t dst_cursor = 0;
+  for (size_t i = 0; i < repl_count; i++) {
+    const RenumReplacement *rep = &repls[i];
+    if (rep->start < src_cursor || rep->start > original_len || rep->start + rep->length > original_len) {
+      free(repls);
+      free(rewritten);
+      return NULL;
+    }
+    size_t unchanged_len = rep->start - src_cursor;
+    memcpy(rewritten + dst_cursor, line->text + src_cursor, unchanged_len);
+    dst_cursor += unchanged_len;
+
+    int printed = snprintf(number_buf, sizeof(number_buf), "%d", rep->replacement);
+    if (printed < 0) {
+      free(repls);
+      free(rewritten);
+      return NULL;
+    }
+    memcpy(rewritten + dst_cursor, number_buf, (size_t)printed);
+    dst_cursor += (size_t)printed;
+    src_cursor = rep->start + rep->length;
+  }
+
+  memcpy(rewritten + dst_cursor, line->text + src_cursor, original_len - src_cursor);
+  dst_cursor += original_len - src_cursor;
+  rewritten[dst_cursor] = '\0';
+
+  free(repls);
+  return rewritten;
+}
+
+static int basic_renum(BasicInterpreter *interp, int start_line, int step) {
+  if (start_line <= 0 || step <= 0) {
+    runtime_error(interp, "BAD ARGUMENTS");
+    return 0;
+  }
+
+  if (interp->program.count == 0) {
+    return 1;
+  }
+
+  size_t count = interp->program.count;
+  int *old_numbers = (int *)malloc(count * sizeof(int));
+  int *new_numbers = (int *)malloc(count * sizeof(int));
+  char **rewritten_texts = (char **)calloc(count, sizeof(char *));
+  if (!old_numbers || !new_numbers || !rewritten_texts) {
+    free(old_numbers);
+    free(new_numbers);
+    free(rewritten_texts);
+    runtime_error(interp, "OUT OF MEMORY");
+    return 0;
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    long long candidate = (long long)start_line + (long long)i * (long long)step;
+    if (candidate > 2147483647LL) {
+      for (size_t j = 0; j < count; j++) {
+        free(rewritten_texts[j]);
+      }
+      free(old_numbers);
+      free(new_numbers);
+      free(rewritten_texts);
+      runtime_error(interp, "BAD ARGUMENTS");
+      return 0;
+    }
+    old_numbers[i] = interp->program.lines[i].number;
+    new_numbers[i] = (int)candidate;
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    rewritten_texts[i] = renum_rewrite_line_text(&interp->program.lines[i], old_numbers, new_numbers, count);
+    if (!rewritten_texts[i]) {
+      for (size_t j = 0; j < count; j++) {
+        free(rewritten_texts[j]);
+      }
+      free(old_numbers);
+      free(new_numbers);
+      free(rewritten_texts);
+      runtime_error(interp, "OUT OF MEMORY");
+      return 0;
+    }
+  }
+
+  Program new_program;
+  program_init(&new_program);
+  int ok = 1;
+  for (size_t i = 0; i < count; i++) {
+    if (!program_set_line(&new_program, new_numbers[i], rewritten_texts[i])) {
+      ok = 0;
+      break;
+    }
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    free(rewritten_texts[i]);
+  }
+  free(rewritten_texts);
+  free(old_numbers);
+  free(new_numbers);
+
+  if (!ok) {
+    program_free(&new_program);
+    runtime_error(interp, "OUT OF MEMORY");
+    return 0;
+  }
+
+  program_free(&interp->program);
+  interp->program = new_program;
   return 1;
 }
 
@@ -1356,6 +1633,50 @@ static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *n
       return;
     }
     basic_list_filtered(interp, has_start, start_line, has_end, end_line);
+    return;
+  }
+  if (token_is(tz, TOK_IDENT, "RENUM")) {
+    int start_line = 10;
+    int step = 10;
+    tokenizer_next(tz);
+    if (tz->current.type != TOK_EOF) {
+      Value start_val = parse_expression(tz, interp);
+      if (interp->error) {
+        value_free(&start_val);
+        return;
+      }
+      if (start_val.type != VAL_NUMBER) {
+        value_free(&start_val);
+        runtime_error(interp, "TYPE MISMATCH");
+        return;
+      }
+      start_line = (int)start_val.number;
+      value_free(&start_val);
+
+      if (token_is(tz, TOK_COMMA, NULL)) {
+        Value step_val;
+        tokenizer_next(tz);
+        step_val = parse_expression(tz, interp);
+        if (interp->error) {
+          value_free(&step_val);
+          return;
+        }
+        if (step_val.type != VAL_NUMBER) {
+          value_free(&step_val);
+          runtime_error(interp, "TYPE MISMATCH");
+          return;
+        }
+        step = (int)step_val.number;
+        value_free(&step_val);
+      }
+
+      if (tz->current.type != TOK_EOF) {
+        runtime_error(interp, "SYNTAX ERROR");
+        return;
+      }
+    }
+
+    basic_renum(interp, start_line, step);
     return;
   }
   if (token_is(tz, TOK_IDENT, "DELETE")) {

@@ -63,6 +63,7 @@ run_case "on_dispatch" "tests/cases/on_dispatch.in" "tests/cases/on_dispatch.out
 run_case "def_fn" "tests/cases/def_fn.in" "tests/cases/def_fn.out"
 run_case "tracing" "tests/cases/tracing.in" "tests/cases/tracing.out"
 run_case "cont" "tests/cases/cont.in" "tests/cases/cont.out"
+run_case "renum" "tests/cases/renum.in" "tests/cases/renum.out"
 run_case "inkey_getkey" "tests/cases/inkey_getkey.in" "tests/cases/inkey_getkey.out"
 run_case "manual_tutorial" "tests/cases/manual_tutorial.in" "tests/cases/manual_tutorial.out"
 run_case_env "manual_screen" "BASIC_SCREEN_FALLBACK=1" "tests/cases/manual_screen.in" "tests/cases/manual_screen.out"

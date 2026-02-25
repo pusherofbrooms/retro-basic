@@ -82,7 +82,7 @@ The demo program uses `CLS`, `LOCATE`, `COLOR`, `PRINT@`, `PLOT`, `LINE`, and `G
 - String functions: `PRINT LEFT$("HELLO", 2)`, `PRINT LEN("HI")`
 - Program control: `RUN`, `CONT`, `LIST`, `NEW`, `END`, `STOP`
 - LIST ranges: `LIST 100-200`, `LIST 100-`, `LIST -200`
-- Program editing helpers: `DELETE 100-200`, `FIND "PRINT"`
+- Program editing helpers: `DELETE 100-200`, `FIND "PRINT"`, `RENUM`, `RENUM 100,5`
 - Tracing: `TRON` / `TROFF`
 - LOAD from file: `LOAD "path/to/program.bas"`
 - SAVE to file: `SAVE "path/to/program.bas"`
