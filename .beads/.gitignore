@@ -15,6 +15,9 @@ sync-state.json
 # Local version tracking (prevents upgrade notification spam after git ops)
 .local_version
 
+# Local UI/CLI state
+last-touched
+
 # Legacy database files
 db.sqlite
 bd.db
