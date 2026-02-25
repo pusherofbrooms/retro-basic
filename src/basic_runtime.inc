@@ -39,6 +39,60 @@ static int parse_variable_target(Tokenizer *tz, BasicInterpreter *interp, char *
   return 1;
 }
 
+static int assign_target_value(BasicInterpreter *interp, const char *name, int is_array, int index1,
+                               int has_index2, int index2, Value *value,
+                               const char *missing_array_error) {
+  int is_string = name[strlen(name) - 1] == '$';
+
+  if (is_array) {
+    Array *array = arrays_find(interp, name);
+    size_t linear_index = 0;
+    if (!array) {
+      value_free(value);
+      runtime_error(interp, missing_array_error ? missing_array_error : "BAD SUBSCRIPT");
+      return 0;
+    }
+    if (!array_resolve_index(array, index1, has_index2, index2, &linear_index)) {
+      value_free(value);
+      runtime_error(interp, "BAD SUBSCRIPT");
+      return 0;
+    }
+    if (is_string && value->type != VAL_STRING) {
+      value_free(value);
+      runtime_error(interp, "TYPE MISMATCH");
+      return 0;
+    }
+    if (!is_string && value->type != VAL_NUMBER) {
+      value_free(value);
+      runtime_error(interp, "TYPE MISMATCH");
+      return 0;
+    }
+    value_free(&array->values[linear_index]);
+    array->values[linear_index] = *value;
+    return 1;
+  }
+
+  Variable *var = vars_get(interp, name, 1);
+  if (!var) {
+    value_free(value);
+    runtime_error(interp, "OUT OF MEMORY");
+    return 0;
+  }
+  if (is_string && value->type != VAL_STRING) {
+    value_free(value);
+    runtime_error(interp, "TYPE MISMATCH");
+    return 0;
+  }
+  if (!is_string && value->type != VAL_NUMBER) {
+    value_free(value);
+    runtime_error(interp, "TYPE MISMATCH");
+    return 0;
+  }
+  value_free(&var->value);
+  var->value = *value;
+  return 1;
+}
+
 static void data_list_append(DataList *data, Value value) {
   if (data->count == data->capacity) {
     size_t new_cap = data->capacity == 0 ? 16 : data->capacity * 2;
@@ -724,25 +778,9 @@ static void execute_input(Tokenizer *tz, BasicInterpreter *interp) {
       value = value_number(strtof(field, NULL));
     }
 
-    if (is_array) {
-      Array *array = arrays_find(interp, name);
-      size_t linear_index = 0;
-      if (!array || !array_resolve_index(array, index1, has_index2, index2, &linear_index)) {
-        value_free(&value);
-        runtime_error(interp, "BAD SUBSCRIPT");
-        return;
-      }
-      value_free(&array->values[linear_index]);
-      array->values[linear_index] = value;
-    } else {
-      Variable *var = vars_get(interp, name, 1);
-      if (!var) {
-        value_free(&value);
-        runtime_error(interp, "OUT OF MEMORY");
-        return;
-      }
-      value_free(&var->value);
-      var->value = value;
+    if (!assign_target_value(interp, name, is_array, index1, has_index2, index2, &value,
+                             "BAD SUBSCRIPT")) {
+      return;
     }
 
     if (tz->current.type == TOK_COMMA) {
@@ -1015,51 +1053,9 @@ static void execute_let(Tokenizer *tz, BasicInterpreter *interp) {
     value_free(&value);
     return;
   }
-  int is_string = name[strlen(name) - 1] == '$';
-  if (is_array) {
-    Array *array = arrays_find(interp, name);
-    size_t linear_index = 0;
-    if (!array) {
-      value_free(&value);
-      runtime_error(interp, "UNDEF'D STATEMENT");
-      return;
-    }
-    if (!array_resolve_index(array, index1, has_index2, index2, &linear_index)) {
-      value_free(&value);
-      runtime_error(interp, "BAD SUBSCRIPT");
-      return;
-    }
-    if (is_string && value.type != VAL_STRING) {
-      value_free(&value);
-      runtime_error(interp, "TYPE MISMATCH");
-      return;
-    }
-    if (!is_string && value.type != VAL_NUMBER) {
-      value_free(&value);
-      runtime_error(interp, "TYPE MISMATCH");
-      return;
-    }
-    value_free(&array->values[linear_index]);
-    array->values[linear_index] = value;
-  } else {
-    Variable *var = vars_get(interp, name, 1);
-    if (!var) {
-      value_free(&value);
-      runtime_error(interp, "OUT OF MEMORY");
-      return;
-    }
-    if (is_string && value.type != VAL_STRING) {
-      value_free(&value);
-      runtime_error(interp, "TYPE MISMATCH");
-      return;
-    }
-    if (!is_string && value.type != VAL_NUMBER) {
-      value_free(&value);
-      runtime_error(interp, "TYPE MISMATCH");
-      return;
-    }
-    value_free(&var->value);
-    var->value = value;
+  if (!assign_target_value(interp, name, is_array, index1, has_index2, index2, &value,
+                           "UNDEF'D STATEMENT")) {
+    return;
   }
 }
 
@@ -1390,46 +1386,9 @@ static void execute_read(Tokenizer *tz, BasicInterpreter *interp) {
       return;
     }
     Value value = value_copy(&interp->data.items[interp->data.cursor++]);
-    int is_string = name[strlen(name) - 1] == '$';
-    if (is_array) {
-      Array *array = arrays_find(interp, name);
-      size_t linear_index = 0;
-      if (!array || !array_resolve_index(array, index1, has_index2, index2, &linear_index)) {
-        value_free(&value);
-        runtime_error(interp, "BAD SUBSCRIPT");
-        return;
-      }
-      if (is_string && value.type != VAL_STRING) {
-        value_free(&value);
-        runtime_error(interp, "TYPE MISMATCH");
-        return;
-      }
-      if (!is_string && value.type != VAL_NUMBER) {
-        value_free(&value);
-        runtime_error(interp, "TYPE MISMATCH");
-        return;
-      }
-      value_free(&array->values[linear_index]);
-      array->values[linear_index] = value;
-    } else {
-      Variable *var = vars_get(interp, name, 1);
-      if (!var) {
-        value_free(&value);
-        runtime_error(interp, "OUT OF MEMORY");
-        return;
-      }
-      if (is_string && value.type != VAL_STRING) {
-        value_free(&value);
-        runtime_error(interp, "TYPE MISMATCH");
-        return;
-      }
-      if (!is_string && value.type != VAL_NUMBER) {
-        value_free(&value);
-        runtime_error(interp, "TYPE MISMATCH");
-        return;
-      }
-      value_free(&var->value);
-      var->value = value;
+    if (!assign_target_value(interp, name, is_array, index1, has_index2, index2, &value,
+                             "BAD SUBSCRIPT")) {
+      return;
     }
     if (tz->current.type == TOK_COMMA) {
       tokenizer_next(tz);
@@ -1439,335 +1398,410 @@ static void execute_read(Tokenizer *tz, BasicInterpreter *interp) {
   }
 }
 
+typedef void (*StatementKeywordHandler)(Tokenizer *tz, BasicInterpreter *interp,
+                                       size_t *next_line_index);
+
+typedef struct {
+  const char *keyword;
+  StatementKeywordHandler handler;
+} StatementDispatchEntry;
+
+static void handle_stmt_rem(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)interp;
+  (void)next_line_index;
+  tokenizer_next(tz);
+  while (tz->current.type != TOK_EOF) {
+    tokenizer_next(tz);
+  }
+}
+
+static void handle_stmt_print(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  if (token_is(tz, TOK_OP, "@")) {
+    tokenizer_next(tz);
+    execute_print_at(tz, interp);
+    return;
+  }
+  execute_print(tz, interp);
+}
+
+static void handle_stmt_cls(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  execute_cls(interp);
+}
+
+static void handle_stmt_locate(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  execute_locate(tz, interp);
+}
+
+static void handle_stmt_color(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  execute_color(tz, interp);
+}
+
+static void handle_stmt_plot(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  execute_plot(tz, interp);
+}
+
+static void handle_stmt_line(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  execute_line(tz, interp);
+}
+
+static void handle_stmt_input(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  execute_input(tz, interp);
+}
+
+static void handle_stmt_let(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  execute_let(tz, interp);
+}
+
+static void handle_stmt_if(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  tokenizer_next(tz);
+  execute_if(tz, interp, next_line_index);
+}
+
+static void handle_stmt_goto(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  tokenizer_next(tz);
+  if (tz->current.type != TOK_NUMBER) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  int line_number = (int)tz->current.number;
+  tokenizer_next(tz);
+  execute_goto(interp, next_line_index, line_number);
+}
+
+static void handle_stmt_gosub(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  tokenizer_next(tz);
+  if (tz->current.type != TOK_NUMBER) {
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  int line_number = (int)tz->current.number;
+  tokenizer_next(tz);
+  if (!gosub_push(interp, *next_line_index)) {
+    return;
+  }
+  execute_goto(interp, next_line_index, line_number);
+}
+
+static void handle_stmt_on(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  tokenizer_next(tz);
+  execute_on(tz, interp, next_line_index);
+}
+
+static void handle_stmt_def(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  execute_def(tz, interp);
+}
+
+static void handle_stmt_return(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  tokenizer_next(tz);
+  if (interp->gosub_count == 0) {
+    runtime_error(interp, "RETURN WITHOUT GOSUB");
+    return;
+  }
+  *next_line_index = interp->gosub_stack[--interp->gosub_count].return_index;
+}
+
+static void handle_stmt_for(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  tokenizer_next(tz);
+  execute_for(tz, interp, *next_line_index - 1);
+}
+
+static void handle_stmt_next(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  tokenizer_next(tz);
+  execute_next(tz, interp, next_line_index);
+}
+
+static void handle_stmt_dim(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  execute_dim(tz, interp);
+}
+
+static void handle_stmt_read(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  execute_read(tz, interp);
+}
+
+static void handle_stmt_data(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  if (interp->in_program) {
+    parse_data_discard(tz, interp);
+  } else {
+    parse_data_statement(tz, interp, &interp->data);
+  }
+}
+
+static void handle_stmt_restore(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  interp->data.cursor = 0;
+}
+
+static void handle_stmt_run(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  basic_run(interp);
+}
+
+static void handle_stmt_cont(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  basic_continue(interp);
+}
+
+static void handle_stmt_tron(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  interp->trace_enabled = 1;
+}
+
+static void handle_stmt_troff(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  interp->trace_enabled = 0;
+}
+
+static void handle_stmt_randomize(Tokenizer *tz, BasicInterpreter *interp,
+                                  size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  if (tz->current.type == TOK_EOF || tz->current.type == TOK_COLON) {
+    basic_randomize(interp, 0, 0.0f);
+    return;
+  }
+  Value seed = parse_expression(tz, interp);
+  if (interp->error) {
+    value_free(&seed);
+    return;
+  }
+  if (seed.type != VAL_NUMBER) {
+    value_free(&seed);
+    runtime_error(interp, "TYPE MISMATCH");
+    return;
+  }
+  basic_randomize(interp, 1, seed.number);
+  value_free(&seed);
+}
+
+static void handle_stmt_list(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  if (tz->current.type == TOK_EOF) {
+    basic_list(interp);
+    return;
+  }
+
+  int has_start = 0;
+  int has_end = 0;
+  int start_line = 0;
+  int end_line = 0;
+  if (!parse_line_range(tz, interp, 1, &has_start, &start_line, &has_end, &end_line)) {
+    return;
+  }
+  basic_list_filtered(interp, has_start, start_line, has_end, end_line);
+}
+
+static void handle_stmt_renum(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  int start_line = 10;
+  int step = 10;
+  tokenizer_next(tz);
+  if (tz->current.type != TOK_EOF) {
+    Value start_val = parse_expression(tz, interp);
+    if (interp->error) {
+      value_free(&start_val);
+      return;
+    }
+    if (start_val.type != VAL_NUMBER) {
+      value_free(&start_val);
+      runtime_error(interp, "TYPE MISMATCH");
+      return;
+    }
+    start_line = (int)start_val.number;
+    value_free(&start_val);
+
+    if (token_is(tz, TOK_COMMA, NULL)) {
+      Value step_val;
+      tokenizer_next(tz);
+      step_val = parse_expression(tz, interp);
+      if (interp->error) {
+        value_free(&step_val);
+        return;
+      }
+      if (step_val.type != VAL_NUMBER) {
+        value_free(&step_val);
+        runtime_error(interp, "TYPE MISMATCH");
+        return;
+      }
+      step = (int)step_val.number;
+      value_free(&step_val);
+    }
+
+    if (tz->current.type != TOK_EOF) {
+      runtime_error(interp, "SYNTAX ERROR");
+      return;
+    }
+  }
+
+  basic_renum(interp, start_line, step);
+}
+
+static void handle_stmt_delete(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  int has_start = 0;
+  int has_end = 0;
+  int start_line = 0;
+  int end_line = 0;
+  if (!parse_line_range(tz, interp, 1, &has_start, &start_line, &has_end, &end_line)) {
+    return;
+  }
+  basic_delete_filtered(interp, has_start, start_line, has_end, end_line);
+}
+
+static void handle_stmt_find(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  Value pattern = parse_expression(tz, interp);
+  if (interp->error) {
+    value_free(&pattern);
+    return;
+  }
+  if (pattern.type != VAL_STRING) {
+    value_free(&pattern);
+    runtime_error(interp, "TYPE MISMATCH");
+    return;
+  }
+  if (tz->current.type != TOK_EOF) {
+    value_free(&pattern);
+    runtime_error(interp, "SYNTAX ERROR");
+    return;
+  }
+  basic_find_text(interp, pattern.string ? pattern.string : "");
+  value_free(&pattern);
+}
+
+static void handle_stmt_new(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  basic_new(interp);
+}
+
+static void handle_stmt_end(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  interp->can_continue = 0;
+  interp->stop = 1;
+}
+
+static void handle_stmt_stop(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  tokenizer_next(tz);
+  interp->can_continue = 1;
+  interp->continue_index = *next_line_index;
+  interp->stop = 1;
+}
+
+static void handle_stmt_load(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  Value path_val = parse_expression(tz, interp);
+  if (path_val.type != VAL_STRING) {
+    value_free(&path_val);
+    runtime_error(interp, "TYPE MISMATCH");
+    return;
+  }
+  basic_load_file(interp, path_val.string, 1);
+  value_free(&path_val);
+}
+
+static void handle_stmt_merge(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  Value path_val = parse_expression(tz, interp);
+  if (path_val.type != VAL_STRING) {
+    value_free(&path_val);
+    runtime_error(interp, "TYPE MISMATCH");
+    return;
+  }
+  basic_load_file(interp, path_val.string, 0);
+  value_free(&path_val);
+}
+
+static void handle_stmt_save(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
+  (void)next_line_index;
+  tokenizer_next(tz);
+  Value path_val = parse_expression(tz, interp);
+  if (path_val.type != VAL_STRING) {
+    value_free(&path_val);
+    runtime_error(interp, "TYPE MISMATCH");
+    return;
+  }
+  basic_save_file(interp, path_val.string);
+  value_free(&path_val);
+}
+
+static const StatementDispatchEntry STATEMENT_DISPATCH_TABLE[] = {
+    {"REM", handle_stmt_rem},         {"PRINT", handle_stmt_print},
+    {"CLS", handle_stmt_cls},         {"LOCATE", handle_stmt_locate},
+    {"COLOR", handle_stmt_color},     {"PLOT", handle_stmt_plot},
+    {"LINE", handle_stmt_line},       {"INPUT", handle_stmt_input},
+    {"LET", handle_stmt_let},         {"IF", handle_stmt_if},
+    {"GOTO", handle_stmt_goto},       {"GOSUB", handle_stmt_gosub},
+    {"ON", handle_stmt_on},           {"DEF", handle_stmt_def},
+    {"RETURN", handle_stmt_return},   {"FOR", handle_stmt_for},
+    {"NEXT", handle_stmt_next},       {"DIM", handle_stmt_dim},
+    {"READ", handle_stmt_read},       {"DATA", handle_stmt_data},
+    {"RESTORE", handle_stmt_restore}, {"RUN", handle_stmt_run},
+    {"CONT", handle_stmt_cont},       {"TRON", handle_stmt_tron},
+    {"TROFF", handle_stmt_troff},     {"RANDOMIZE", handle_stmt_randomize},
+    {"LIST", handle_stmt_list},       {"RENUM", handle_stmt_renum},
+    {"DELETE", handle_stmt_delete},   {"FIND", handle_stmt_find},
+    {"NEW", handle_stmt_new},         {"END", handle_stmt_end},
+    {"STOP", handle_stmt_stop},       {"LOAD", handle_stmt_load},
+    {"MERGE", handle_stmt_merge},     {"SAVE", handle_stmt_save},
+};
+
+static StatementKeywordHandler find_statement_keyword_handler(const char *keyword) {
+  for (size_t i = 0; i < sizeof(STATEMENT_DISPATCH_TABLE) / sizeof(STATEMENT_DISPATCH_TABLE[0]);
+       i++) {
+    if (strcmp(STATEMENT_DISPATCH_TABLE[i].keyword, keyword) == 0) {
+      return STATEMENT_DISPATCH_TABLE[i].handler;
+    }
+  }
+  return NULL;
+}
+
 static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
   if (tz->current.type == TOK_EOF) {
     return;
   }
-  if (token_is(tz, TOK_IDENT, "REM")) {
-    tokenizer_next(tz);
-    while (tz->current.type != TOK_EOF) {
-      tokenizer_next(tz);
-    }
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "PRINT")) {
-    tokenizer_next(tz);
-    if (token_is(tz, TOK_OP, "@")) {
-      tokenizer_next(tz);
-      execute_print_at(tz, interp);
-      return;
-    }
-    execute_print(tz, interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "CLS")) {
-    tokenizer_next(tz);
-    execute_cls(interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "LOCATE")) {
-    tokenizer_next(tz);
-    execute_locate(tz, interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "COLOR")) {
-    tokenizer_next(tz);
-    execute_color(tz, interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "PLOT")) {
-    tokenizer_next(tz);
-    execute_plot(tz, interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "LINE")) {
-    tokenizer_next(tz);
-    execute_line(tz, interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "INPUT")) {
-    tokenizer_next(tz);
-    execute_input(tz, interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "LET")) {
-    tokenizer_next(tz);
-    execute_let(tz, interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "IF")) {
-    tokenizer_next(tz);
-    execute_if(tz, interp, next_line_index);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "GOTO")) {
-    tokenizer_next(tz);
-    if (tz->current.type != TOK_NUMBER) {
-      runtime_error(interp, "SYNTAX ERROR");
-      return;
-    }
-    int line_number = (int)tz->current.number;
-    tokenizer_next(tz);
-    execute_goto(interp, next_line_index, line_number);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "GOSUB")) {
-    tokenizer_next(tz);
-    if (tz->current.type != TOK_NUMBER) {
-      runtime_error(interp, "SYNTAX ERROR");
-      return;
-    }
-    int line_number = (int)tz->current.number;
-    tokenizer_next(tz);
-    if (!gosub_push(interp, *next_line_index)) {
-      return;
-    }
-    execute_goto(interp, next_line_index, line_number);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "ON")) {
-    tokenizer_next(tz);
-    execute_on(tz, interp, next_line_index);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "DEF")) {
-    tokenizer_next(tz);
-    execute_def(tz, interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "RETURN")) {
-    tokenizer_next(tz);
-    if (interp->gosub_count == 0) {
-      runtime_error(interp, "RETURN WITHOUT GOSUB");
-      return;
-    }
-    *next_line_index = interp->gosub_stack[--interp->gosub_count].return_index;
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "FOR")) {
-    tokenizer_next(tz);
-    execute_for(tz, interp, *next_line_index - 1);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "NEXT")) {
-    tokenizer_next(tz);
-    execute_next(tz, interp, next_line_index);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "DIM")) {
-    tokenizer_next(tz);
-    execute_dim(tz, interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "READ")) {
-    tokenizer_next(tz);
-    execute_read(tz, interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "DATA")) {
-    tokenizer_next(tz);
-    if (interp->in_program) {
-      parse_data_discard(tz, interp);
-    } else {
-      parse_data_statement(tz, interp, &interp->data);
-    }
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "RESTORE")) {
-    tokenizer_next(tz);
-    interp->data.cursor = 0;
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "RUN")) {
-    tokenizer_next(tz);
-    basic_run(interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "CONT")) {
-    tokenizer_next(tz);
-    basic_continue(interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "TRON")) {
-    tokenizer_next(tz);
-    interp->trace_enabled = 1;
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "TROFF")) {
-    tokenizer_next(tz);
-    interp->trace_enabled = 0;
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "RANDOMIZE")) {
-    tokenizer_next(tz);
-    if (tz->current.type == TOK_EOF || tz->current.type == TOK_COLON) {
-      basic_randomize(interp, 0, 0.0f);
-      return;
-    }
-    Value seed = parse_expression(tz, interp);
-    if (interp->error) {
-      value_free(&seed);
-      return;
-    }
-    if (seed.type != VAL_NUMBER) {
-      value_free(&seed);
-      runtime_error(interp, "TYPE MISMATCH");
-      return;
-    }
-    basic_randomize(interp, 1, seed.number);
-    value_free(&seed);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "LIST")) {
-    tokenizer_next(tz);
-    if (tz->current.type == TOK_EOF) {
-      basic_list(interp);
-      return;
-    }
-
-    int has_start = 0;
-    int has_end = 0;
-    int start_line = 0;
-    int end_line = 0;
-    if (!parse_line_range(tz, interp, 1, &has_start, &start_line, &has_end, &end_line)) {
-      return;
-    }
-    basic_list_filtered(interp, has_start, start_line, has_end, end_line);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "RENUM")) {
-    int start_line = 10;
-    int step = 10;
-    tokenizer_next(tz);
-    if (tz->current.type != TOK_EOF) {
-      Value start_val = parse_expression(tz, interp);
-      if (interp->error) {
-        value_free(&start_val);
-        return;
-      }
-      if (start_val.type != VAL_NUMBER) {
-        value_free(&start_val);
-        runtime_error(interp, "TYPE MISMATCH");
-        return;
-      }
-      start_line = (int)start_val.number;
-      value_free(&start_val);
-
-      if (token_is(tz, TOK_COMMA, NULL)) {
-        Value step_val;
-        tokenizer_next(tz);
-        step_val = parse_expression(tz, interp);
-        if (interp->error) {
-          value_free(&step_val);
-          return;
-        }
-        if (step_val.type != VAL_NUMBER) {
-          value_free(&step_val);
-          runtime_error(interp, "TYPE MISMATCH");
-          return;
-        }
-        step = (int)step_val.number;
-        value_free(&step_val);
-      }
-
-      if (tz->current.type != TOK_EOF) {
-        runtime_error(interp, "SYNTAX ERROR");
-        return;
-      }
-    }
-
-    basic_renum(interp, start_line, step);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "DELETE")) {
-    tokenizer_next(tz);
-    int has_start = 0;
-    int has_end = 0;
-    int start_line = 0;
-    int end_line = 0;
-    if (!parse_line_range(tz, interp, 1, &has_start, &start_line, &has_end, &end_line)) {
-      return;
-    }
-    basic_delete_filtered(interp, has_start, start_line, has_end, end_line);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "FIND")) {
-    tokenizer_next(tz);
-    Value pattern = parse_expression(tz, interp);
-    if (interp->error) {
-      value_free(&pattern);
-      return;
-    }
-    if (pattern.type != VAL_STRING) {
-      value_free(&pattern);
-      runtime_error(interp, "TYPE MISMATCH");
-      return;
-    }
-    if (tz->current.type != TOK_EOF) {
-      value_free(&pattern);
-      runtime_error(interp, "SYNTAX ERROR");
-      return;
-    }
-    basic_find_text(interp, pattern.string ? pattern.string : "");
-    value_free(&pattern);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "NEW")) {
-    tokenizer_next(tz);
-    basic_new(interp);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "END")) {
-    tokenizer_next(tz);
-    interp->can_continue = 0;
-    interp->stop = 1;
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "STOP")) {
-    tokenizer_next(tz);
-    interp->can_continue = 1;
-    interp->continue_index = *next_line_index;
-    interp->stop = 1;
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "LOAD")) {
-    tokenizer_next(tz);
-    Value path_val = parse_expression(tz, interp);
-    if (path_val.type != VAL_STRING) {
-      value_free(&path_val);
-      runtime_error(interp, "TYPE MISMATCH");
-      return;
-    }
-    basic_load_file(interp, path_val.string, 1);
-    value_free(&path_val);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "MERGE")) {
-    tokenizer_next(tz);
-    Value path_val = parse_expression(tz, interp);
-    if (path_val.type != VAL_STRING) {
-      value_free(&path_val);
-      runtime_error(interp, "TYPE MISMATCH");
-      return;
-    }
-    basic_load_file(interp, path_val.string, 0);
-    value_free(&path_val);
-    return;
-  }
-  if (token_is(tz, TOK_IDENT, "SAVE")) {
-    tokenizer_next(tz);
-    Value path_val = parse_expression(tz, interp);
-    if (path_val.type != VAL_STRING) {
-      value_free(&path_val);
-      runtime_error(interp, "TYPE MISMATCH");
-      return;
-    }
-    basic_save_file(interp, path_val.string);
-    value_free(&path_val);
-    return;
-  }
 
   if (tz->current.type == TOK_IDENT) {
+    StatementKeywordHandler handler = find_statement_keyword_handler(tz->current.text);
+    if (handler) {
+      handler(tz, interp, next_line_index);
+      return;
+    }
+
     execute_let(tz, interp);
     return;
   }
