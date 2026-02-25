@@ -1926,7 +1926,7 @@ void basic_new(BasicInterpreter *interp) {
 }
 
 enum {
-  BASIC_LOAD_MAX_LINE_LENGTH = 255
+  BASIC_PROGRAM_MAX_LINE_LENGTH = 255
 };
 
 static void basic_load_parse_error(BasicInterpreter *interp,
@@ -1951,6 +1951,12 @@ static void basic_load_discard_until_newline(FILE *file) {
       break;
     }
   }
+}
+
+static void basic_report_line_too_long(BasicInterpreter *interp) {
+  runtime_error(interp, "LINE TOO LONG");
+  print_error(interp);
+  interp->error = 0;
 }
 
 int basic_load_file(BasicInterpreter *interp, const char *path, int replace_program) {
@@ -1990,7 +1996,7 @@ int basic_load_file(BasicInterpreter *interp, const char *path, int replace_prog
     if (has_newline) {
       line[--line_len] = '\0';
     }
-    if (line_len > BASIC_LOAD_MAX_LINE_LENGTH) {
+    if (line_len > BASIC_PROGRAM_MAX_LINE_LENGTH) {
       fclose(file);
       if (using_pending) {
         program_free(&pending_program);
@@ -2125,12 +2131,27 @@ static void execute_immediate(BasicInterpreter *interp, const char *input) {
   }
 }
 
+static void basic_repl_discard_until_newline(BasicInterpreter *interp) {
+  char discard[256];
+  while (basic_terminal_read_line(interp->terminal, discard, sizeof(discard))) {
+    if (strchr(discard, '\n') != NULL) {
+      break;
+    }
+  }
+}
+
 void basic_repl(BasicInterpreter *interp) {
   char line[1024];
   while (basic_terminal_read_line(interp->terminal, line, sizeof(line))) {
-    char *newline = strchr(line, '\n');
-    if (newline) {
-      *newline = '\0';
+    size_t line_len = strlen(line);
+    int has_newline = line_len > 0 && line[line_len - 1] == '\n';
+    if (!has_newline && line_len == sizeof(line) - 1) {
+      basic_repl_discard_until_newline(interp);
+      basic_report_line_too_long(interp);
+      continue;
+    }
+    if (has_newline) {
+      line[--line_len] = '\0';
     }
     char *cursor = line;
     while (isspace((unsigned char)*cursor)) cursor++;
@@ -2138,6 +2159,10 @@ void basic_repl(BasicInterpreter *interp) {
       continue;
     }
     if (isdigit((unsigned char)*cursor)) {
+      if (line_len > BASIC_PROGRAM_MAX_LINE_LENGTH) {
+        basic_report_line_too_long(interp);
+        continue;
+      }
       int number = (int)strtol(cursor, &cursor, 10);
       while (isspace((unsigned char)*cursor)) cursor++;
       if (!program_set_line(&interp->program, number, cursor)) {

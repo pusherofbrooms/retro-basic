@@ -53,6 +53,7 @@ run_case "exponent_assoc" "tests/cases/exponent_assoc.in" "tests/cases/exponent_
 run_case "for_validation" "tests/cases/for_validation.in" "tests/cases/for_validation.out"
 run_case "arrays_2d" "tests/cases/arrays_2d.in" "tests/cases/arrays_2d.out"
 run_case "malformed_trailing" "tests/cases/malformed_trailing.in" "tests/cases/malformed_trailing.out"
+run_case "repl_overlong_line" "tests/cases/repl_overlong_line.in" "tests/cases/repl_overlong_line.out"
 run_case_env "error_context" "BASIC_ERROR_CONTEXT=1" "tests/cases/error_context.in" "tests/cases/error_context.out"
 run_case "line_tokenize_validation" "tests/cases/line_tokenize_validation.in" "tests/cases/line_tokenize_validation.out"
 run_case "delete_find" "tests/cases/delete_find.in" "tests/cases/delete_find.out"

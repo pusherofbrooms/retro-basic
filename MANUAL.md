@@ -351,6 +351,7 @@ Use `FIND "text"` to locate matching lines and `DELETE start-end` to remove rang
   - Optional detail: set `BASIC_ERROR_CONTEXT=1` to include token column context (for example, `SYNTAX ERROR IN 20 AT COLUMN 9`).
 - `TYPE MISMATCH IN <line>`: number vs string values were mixed incorrectly.
 - `FILE NOT FOUND`: `LOAD` path does not exist.
+- `LINE TOO LONG`: a typed program line exceeded 255 characters.
 - `LOAD ERROR IN "..." LINE N: LINE TOO LONG`: a loaded source line exceeded 255 characters.
 - `CAN'T CONTINUE`: `CONT` was used when no stopped program can resume.
 

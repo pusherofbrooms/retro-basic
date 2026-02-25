@@ -116,6 +116,7 @@ On macOS (Darwin), `make test-mem` is skipped with a message because this workfl
 - Variables are multi-letter and case-insensitive; `$` suffix denotes strings.
 - `RUN` resets variables and arrays before execution (C64-style) while keeping the stored program.
 - Screen coordinates are 1-based integers: row 1, column 1 is top-left.
+- Program source line length limit: 255 characters per line.
 - Optional error context: set `BASIC_ERROR_CONTEXT=1` to append token column info (for example, `SYNTAX ERROR IN 100 AT COLUMN 9`).
 - Screen output modes:
   - ANSI-capable TTY: cursor/color drawing is rendered directly.
