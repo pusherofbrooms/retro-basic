@@ -7,9 +7,11 @@
       url = "github:openai/codex";
       flake = false;
     };
+    pi.url = "github:pusherofbrooms/pi-mono-nix";
+    pi.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, codex }:
+  outputs = { self, nixpkgs, codex, pi }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system);
@@ -43,6 +45,7 @@
               pkgs.gnumake
               pkgs.beads
               pkgs.clang-tools
+              pi.packages.${system}.pi
             ]
             ++ pkgs.lib.optional (!pkgs.stdenv.isDarwin) pkgs.valgrind;
             shellHook = ''
