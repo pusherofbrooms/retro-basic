@@ -51,6 +51,8 @@ run_case "for_validation" "tests/cases/for_validation.in" "tests/cases/for_valid
 run_case "malformed_trailing" "tests/cases/malformed_trailing.in" "tests/cases/malformed_trailing.out"
 run_case "line_tokenize_validation" "tests/cases/line_tokenize_validation.in" "tests/cases/line_tokenize_validation.out"
 run_case "delete_find" "tests/cases/delete_find.in" "tests/cases/delete_find.out"
+run_case "boolean_ops" "tests/cases/boolean_ops.in" "tests/cases/boolean_ops.out"
+run_case "if_else" "tests/cases/if_else.in" "tests/cases/if_else.out"
 run_case "run_reset" "tests/cases/run_reset.in" "tests/cases/run_reset.out"
 run_case "rnd_randomize" "tests/cases/rnd_randomize.in" "tests/cases/rnd_randomize.out"
 run_case "on_dispatch" "tests/cases/on_dispatch.in" "tests/cases/on_dispatch.out"

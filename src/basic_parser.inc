@@ -367,6 +367,50 @@ static Value parse_relational(Tokenizer *tz, BasicInterpreter *interp) {
   return left;
 }
 
-static Value parse_expression(Tokenizer *tz, BasicInterpreter *interp) {
+static Value parse_not(Tokenizer *tz, BasicInterpreter *interp) {
+  if (token_is(tz, TOK_IDENT, "NOT")) {
+    tokenizer_next(tz);
+    Value value = parse_not(tz, interp);
+    if (value.type != VAL_NUMBER) {
+      runtime_error(interp, "TYPE MISMATCH");
+      return value;
+    }
+    value.number = value.number == 0.0f ? 1.0f : 0.0f;
+    return value;
+  }
   return parse_relational(tz, interp);
+}
+
+static Value parse_and(Tokenizer *tz, BasicInterpreter *interp) {
+  Value left = parse_not(tz, interp);
+  while (token_is(tz, TOK_IDENT, "AND")) {
+    tokenizer_next(tz);
+    Value right = parse_not(tz, interp);
+    if (left.type == VAL_NUMBER && right.type == VAL_NUMBER) {
+      left.number = (left.number != 0.0f && right.number != 0.0f) ? 1.0f : 0.0f;
+    } else {
+      runtime_error(interp, "TYPE MISMATCH");
+    }
+    value_free(&right);
+  }
+  return left;
+}
+
+static Value parse_or(Tokenizer *tz, BasicInterpreter *interp) {
+  Value left = parse_and(tz, interp);
+  while (token_is(tz, TOK_IDENT, "OR")) {
+    tokenizer_next(tz);
+    Value right = parse_and(tz, interp);
+    if (left.type == VAL_NUMBER && right.type == VAL_NUMBER) {
+      left.number = (left.number != 0.0f || right.number != 0.0f) ? 1.0f : 0.0f;
+    } else {
+      runtime_error(interp, "TYPE MISMATCH");
+    }
+    value_free(&right);
+  }
+  return left;
+}
+
+static Value parse_expression(Tokenizer *tz, BasicInterpreter *interp) {
+  return parse_or(tz, interp);
 }

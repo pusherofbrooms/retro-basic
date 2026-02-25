@@ -143,6 +143,7 @@ static int parse_line_range(Tokenizer *tz, BasicInterpreter *interp, int allow_s
 }
 
 static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index);
+static void execute_goto(BasicInterpreter *interp, size_t *next_line_index, int line_number);
 
 static void execute_def(Tokenizer *tz, BasicInterpreter *interp) {
   if (tz->current.type != TOK_IDENT || strncmp(tz->current.text, "FN", 2) != 0) {
@@ -211,6 +212,42 @@ static void execute_statement_list(Tokenizer *tz, BasicInterpreter *interp, size
   while (tz->current.type != TOK_EOF && !interp->stop && !interp->error) {
     execute_statement(tz, interp, next_line_index);
     if (interp->stop || interp->error) {
+      return;
+    }
+    if (tz->current.type != TOK_EOF && tz->current.type != TOK_COLON) {
+      runtime_error(interp, "SYNTAX ERROR");
+      return;
+    }
+    if (tz->current.type == TOK_COLON) {
+      tokenizer_next(tz);
+      continue;
+    }
+    break;
+  }
+}
+
+static void execute_statement_list_until_else(Tokenizer *tz, BasicInterpreter *interp,
+                                              size_t *next_line_index, int stop_at_else) {
+  if (tz->current.type == TOK_NUMBER) {
+    int line_number = (int)tz->current.number;
+    tokenizer_next(tz);
+    if (tz->current.type != TOK_EOF && !(stop_at_else && token_is(tz, TOK_IDENT, "ELSE"))) {
+      runtime_error(interp, "SYNTAX ERROR");
+      return;
+    }
+    execute_goto(interp, next_line_index, line_number);
+    return;
+  }
+
+  while (tz->current.type != TOK_EOF && !interp->stop && !interp->error) {
+    if (stop_at_else && token_is(tz, TOK_IDENT, "ELSE")) {
+      return;
+    }
+    execute_statement(tz, interp, next_line_index);
+    if (interp->stop || interp->error) {
+      return;
+    }
+    if (stop_at_else && token_is(tz, TOK_IDENT, "ELSE")) {
       return;
     }
     if (tz->current.type != TOK_EOF && tz->current.type != TOK_COLON) {
@@ -658,22 +695,28 @@ static void execute_if(Tokenizer *tz, BasicInterpreter *interp, size_t *next_lin
     return;
   }
   tokenizer_next(tz);
-  if (!truthy) {
-    return;
-  }
-  if (tz->current.type == TOK_NUMBER) {
-    int line_number = (int)tz->current.number;
-    tokenizer_next(tz);
-    int found = 0;
-    size_t idx = program_find_index(&interp->program, line_number, &found);
-    if (!found) {
-      runtime_error(interp, "UNDEF'D STATEMENT");
+
+  if (truthy) {
+    execute_statement_list_until_else(tz, interp, next_line_index, 1);
+    if (interp->error || interp->stop) {
       return;
     }
-    *next_line_index = idx;
+    if (token_is(tz, TOK_IDENT, "ELSE")) {
+      while (tz->current.type != TOK_EOF) {
+        tokenizer_next(tz);
+      }
+    }
     return;
   }
-  execute_statement_list(tz, interp, next_line_index);
+
+  while (tz->current.type != TOK_EOF && !token_is(tz, TOK_IDENT, "ELSE")) {
+    tokenizer_next(tz);
+  }
+  if (!token_is(tz, TOK_IDENT, "ELSE")) {
+    return;
+  }
+  tokenizer_next(tz);
+  execute_statement_list_until_else(tz, interp, next_line_index, 0);
 }
 
 static void execute_goto(BasicInterpreter *interp, size_t *next_line_index, int line_number) {
