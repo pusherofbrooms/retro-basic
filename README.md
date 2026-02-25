@@ -84,7 +84,8 @@ The demo program uses `CLS`, `LOCATE`, `COLOR`, `PRINT@`, `PLOT`, `LINE`, and `G
 - LIST ranges: `LIST 100-200`, `LIST 100-`, `LIST -200`
 - Program editing helpers: `DELETE 100-200`, `FIND "PRINT"`, `RENUM`, `RENUM 100,5`
 - Tracing: `TRON` / `TROFF`
-- LOAD from file: `LOAD "path/to/program.bas"`
+- LOAD from file (replace current program): `LOAD "path/to/program.bas"`
+- MERGE from file (insert/replace matching lines): `MERGE "path/to/program.bas"`
 - SAVE to file: `SAVE "path/to/program.bas"`
 - Key input functions: `INKEY$()` (non-blocking), `GETKEY$()` (blocking with line-input fallback)
 - Screen commands: `CLS`, `LOCATE 5,10`, `COLOR 14,4`, `PRINT@ 3,2,"HI"`, `PLOT 10,20,"*"`, `LINE 2,2,2,20,"-"`

@@ -1742,6 +1742,18 @@ static void execute_statement(Tokenizer *tz, BasicInterpreter *interp, size_t *n
     value_free(&path_val);
     return;
   }
+  if (token_is(tz, TOK_IDENT, "MERGE")) {
+    tokenizer_next(tz);
+    Value path_val = parse_expression(tz, interp);
+    if (path_val.type != VAL_STRING) {
+      value_free(&path_val);
+      runtime_error(interp, "TYPE MISMATCH");
+      return;
+    }
+    basic_load_file(interp, path_val.string, 0);
+    value_free(&path_val);
+    return;
+  }
   if (token_is(tz, TOK_IDENT, "SAVE")) {
     tokenizer_next(tz);
     Value path_val = parse_expression(tz, interp);

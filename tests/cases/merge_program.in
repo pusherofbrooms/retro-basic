@@ -1,0 +1,7 @@
+NEW
+10 PRINT "KEEP"
+20 PRINT "OLD"
+40 PRINT "TAIL"
+MERGE "tests/fixtures/merge_patch.bas"
+LIST
+RUN

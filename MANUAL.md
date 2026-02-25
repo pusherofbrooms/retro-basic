@@ -368,7 +368,7 @@ Try these next:
 - Program building: line numbers, `LIST`, `LIST 100-200`, `DELETE 100-200`, `FIND "PRINT"`, `RENUM`, `RENUM 100,5`, `NEW`
 - Running and control: `RUN`, `STOP`, `CONT`, `END`
 - Input/output helpers: `INPUT "NAME? ";N$`, `PRINT "A";TAB(10);"B"`, `PRINT "X";SPC(3);"Y"`
-- Files: `SAVE "file.bas"`, `LOAD "file.bas"`
+- Files: `SAVE "file.bas"`, `LOAD "file.bas"` (replace), `MERGE "file.bas"` (insert/replace matching lines)
 - Comments/debugging: `REM ...`, `' ...`, `TRON`, `TROFF`
 
 ## Verified examples
