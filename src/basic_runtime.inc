@@ -94,15 +94,10 @@ static int assign_target_value(BasicInterpreter *interp, const char *name, int i
 }
 
 static void data_list_append(DataList *data, Value value) {
-  if (data->count == data->capacity) {
-    size_t new_cap = data->capacity == 0 ? 16 : data->capacity * 2;
-    Value *new_items = (Value *)realloc(data->items, new_cap * sizeof(Value));
-    if (!new_items) {
-      value_free(&value);
-      return;
-    }
-    data->items = new_items;
-    data->capacity = new_cap;
+  if (!grow_array_capacity((void **)&data->items, sizeof(Value), &data->capacity, data->count + 1,
+                           16)) {
+    value_free(&value);
+    return;
   }
   data->items[data->count++] = value;
 }
@@ -1103,15 +1098,10 @@ static void execute_goto(BasicInterpreter *interp, size_t *next_line_index, int 
 }
 
 static int gosub_push(BasicInterpreter *interp, size_t return_index) {
-  if (interp->gosub_count == interp->gosub_capacity) {
-    size_t new_cap = interp->gosub_capacity == 0 ? 8 : interp->gosub_capacity * 2;
-    GosubFrame *new_stack = (GosubFrame *)realloc(interp->gosub_stack, new_cap * sizeof(GosubFrame));
-    if (!new_stack) {
-      runtime_error(interp, "OUT OF MEMORY");
-      return 0;
-    }
-    interp->gosub_stack = new_stack;
-    interp->gosub_capacity = new_cap;
+  if (!grow_array_capacity((void **)&interp->gosub_stack, sizeof(GosubFrame),
+                           &interp->gosub_capacity, interp->gosub_count + 1, 8)) {
+    runtime_error(interp, "OUT OF MEMORY");
+    return 0;
   }
   interp->gosub_stack[interp->gosub_count++].return_index = return_index;
   return 1;
@@ -1244,18 +1234,13 @@ static void execute_for(Tokenizer *tz, BasicInterpreter *interp, size_t current_
   value_free(&var->value);
   var->value = value_number(start.number);
 
-  if (interp->for_count == interp->for_capacity) {
-    size_t new_cap = interp->for_capacity == 0 ? 8 : interp->for_capacity * 2;
-    ForFrame *new_stack = (ForFrame *)realloc(interp->for_stack, new_cap * sizeof(ForFrame));
-    if (!new_stack) {
-      runtime_error(interp, "OUT OF MEMORY");
-      value_free(&start);
-      value_free(&limit);
-      value_free(&step);
-      return;
-    }
-    interp->for_stack = new_stack;
-    interp->for_capacity = new_cap;
+  if (!grow_array_capacity((void **)&interp->for_stack, sizeof(ForFrame), &interp->for_capacity,
+                           interp->for_count + 1, 8)) {
+    runtime_error(interp, "OUT OF MEMORY");
+    value_free(&start);
+    value_free(&limit);
+    value_free(&step);
+    return;
   }
 
   interp->for_stack[interp->for_count].name = strdup(name);

@@ -168,6 +168,38 @@ static Value value_number(float num) {
   return value;
 }
 
+static int grow_array_capacity(void **items, size_t element_size, size_t *capacity, size_t required,
+                               size_t initial_capacity) {
+  if (required <= *capacity) {
+    return 1;
+  }
+
+  size_t new_capacity = *capacity == 0 ? initial_capacity : *capacity;
+  if (new_capacity == 0) {
+    new_capacity = 1;
+  }
+  while (new_capacity < required) {
+    if (new_capacity > SIZE_MAX / 2) {
+      new_capacity = required;
+      break;
+    }
+    new_capacity *= 2;
+  }
+
+  if (new_capacity < required || new_capacity > SIZE_MAX / element_size) {
+    return 0;
+  }
+
+  void *new_items = realloc(*items, new_capacity * element_size);
+  if (!new_items) {
+    return 0;
+  }
+
+  *items = new_items;
+  *capacity = new_capacity;
+  return 1;
+}
+
 static Value value_string(const char *text, size_t len) {
   Value value;
   value.type = VAL_STRING;
@@ -277,16 +309,11 @@ static int program_set_line(Program *program, int number, const char *text) {
     return 1;
   }
 
-  if (program->count == program->capacity) {
-    size_t new_cap = program->capacity == 0 ? 16 : program->capacity * 2;
-    ProgramLine *new_lines = (ProgramLine *)realloc(program->lines, new_cap * sizeof(ProgramLine));
-    if (!new_lines) {
-      free(new_text);
-      free(new_tokens);
-      return 0;
-    }
-    program->lines = new_lines;
-    program->capacity = new_cap;
+  if (!grow_array_capacity((void **)&program->lines, sizeof(ProgramLine), &program->capacity,
+                           program->count + 1, 16)) {
+    free(new_text);
+    free(new_tokens);
+    return 0;
   }
 
   for (size_t i = program->count; i > index; i--) {
@@ -315,14 +342,9 @@ static Variable *vars_get(BasicInterpreter *interp, const char *name, int create
     return var;
   }
 
-  if (interp->var_count == interp->var_capacity) {
-    size_t new_cap = interp->var_capacity == 0 ? 32 : interp->var_capacity * 2;
-    Variable *new_vars = (Variable *)realloc(interp->vars, new_cap * sizeof(Variable));
-    if (!new_vars) {
-      return NULL;
-    }
-    interp->vars = new_vars;
-    interp->var_capacity = new_cap;
+  if (!grow_array_capacity((void **)&interp->vars, sizeof(Variable), &interp->var_capacity,
+                           interp->var_count + 1, 32)) {
+    return NULL;
   }
   interp->vars[interp->var_count].name = strdup(name);
   interp->vars[interp->var_count].value = value_number(0.0f);
@@ -354,14 +376,9 @@ static Array *arrays_get(BasicInterpreter *interp, const char *name, int create,
   if (array || !create) {
     return array;
   }
-  if (interp->array_count == interp->array_capacity) {
-    size_t new_cap = interp->array_capacity == 0 ? 8 : interp->array_capacity * 2;
-    Array *new_arrays = (Array *)realloc(interp->arrays, new_cap * sizeof(Array));
-    if (!new_arrays) {
-      return NULL;
-    }
-    interp->arrays = new_arrays;
-    interp->array_capacity = new_cap;
+  if (!grow_array_capacity((void **)&interp->arrays, sizeof(Array), &interp->array_capacity,
+                           interp->array_count + 1, 8)) {
+    return NULL;
   }
   interp->arrays[interp->array_count].name = strdup(name);
   interp->arrays[interp->array_count].is_string = is_string;
@@ -621,15 +638,9 @@ static int tokenize_line(const char *input, Token **out_tokens, size_t *out_coun
       free(tokens);
       return 0;
     }
-    if (count == capacity) {
-      size_t new_capacity = capacity == 0 ? 16 : capacity * 2;
-      Token *new_tokens = (Token *)realloc(tokens, new_capacity * sizeof(Token));
-      if (!new_tokens) {
-        free(tokens);
-        return 0;
-      }
-      tokens = new_tokens;
-      capacity = new_capacity;
+    if (!grow_array_capacity((void **)&tokens, sizeof(Token), &capacity, count + 1, 16)) {
+      free(tokens);
+      return 0;
     }
     tokens[count++] = tz.current;
     if (tz.current.type == TOK_EOF) {
@@ -810,14 +821,9 @@ static int functions_set(BasicInterpreter *interp, const char *name, const char 
     return 1;
   }
 
-  if (interp->function_count == interp->function_capacity) {
-    size_t new_cap = interp->function_capacity == 0 ? 8 : interp->function_capacity * 2;
-    UserFunction *new_functions = (UserFunction *)realloc(interp->functions, new_cap * sizeof(UserFunction));
-    if (!new_functions) {
-      return 0;
-    }
-    interp->functions = new_functions;
-    interp->function_capacity = new_cap;
+  if (!grow_array_capacity((void **)&interp->functions, sizeof(UserFunction),
+                           &interp->function_capacity, interp->function_count + 1, 8)) {
+    return 0;
   }
 
   UserFunction *fn = &interp->functions[interp->function_count];
@@ -935,39 +941,6 @@ static void basic_randomize(BasicInterpreter *interp, int has_seed, float seed) 
     return;
   }
   rng_seed(interp, (uint32_t)time(NULL));
-}
-
-static int builtin_arity(const char *name, size_t *min_args, size_t *max_args) {
-  if (strcmp(name, "LEFT$") == 0 || strcmp(name, "RIGHT$") == 0) {
-    *min_args = 2;
-    *max_args = 2;
-    return 1;
-  }
-  if (strcmp(name, "MID$") == 0) {
-    *min_args = 2;
-    *max_args = 3;
-    return 1;
-  }
-  if (strcmp(name, "INKEY$") == 0 || strcmp(name, "GETKEY$") == 0) {
-    *min_args = 0;
-    *max_args = 0;
-    return 1;
-  }
-  if (strcmp(name, "RND") == 0) {
-    *min_args = 0;
-    *max_args = 1;
-    return 1;
-  }
-  if (strcmp(name, "LEN") == 0 || strcmp(name, "ASC") == 0 || strcmp(name, "CHR$") == 0 ||
-      strcmp(name, "ABS") == 0 || strcmp(name, "INT") == 0 || strcmp(name, "SIN") == 0 ||
-      strcmp(name, "COS") == 0 || strcmp(name, "TAN") == 0 || strcmp(name, "SQR") == 0 ||
-      strcmp(name, "LOG") == 0 || strcmp(name, "EXP") == 0 || strcmp(name, "ATN") == 0 ||
-      strcmp(name, "SGN") == 0) {
-    *min_args = 1;
-    *max_args = 1;
-    return 1;
-  }
-  return 0;
 }
 
 #include "basic_parser.inc"

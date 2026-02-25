@@ -1,113 +1,198 @@
-static int is_builtin_function_name(const char *name) {
-  return strcmp(name, "LEFT$") == 0 || strcmp(name, "MID$") == 0 || strcmp(name, "RIGHT$") == 0 ||
-         strcmp(name, "LEN") == 0 || strcmp(name, "ASC") == 0 || strcmp(name, "CHR$") == 0 ||
-         strcmp(name, "INKEY$") == 0 || strcmp(name, "GETKEY$") == 0 ||
-         strcmp(name, "ABS") == 0 || strcmp(name, "INT") == 0 || strcmp(name, "RND") == 0 ||
-         strcmp(name, "SIN") == 0 || strcmp(name, "COS") == 0 || strcmp(name, "TAN") == 0 ||
-         strcmp(name, "SQR") == 0 || strcmp(name, "LOG") == 0 || strcmp(name, "EXP") == 0 ||
-         strcmp(name, "ATN") == 0 || strcmp(name, "SGN") == 0;
-}
+typedef Value (*BuiltinEvalFn)(BasicInterpreter *interp, Value *args, size_t arg_count);
 
-static Value evaluate_builtin_function(Tokenizer *tz, BasicInterpreter *interp, const char *name,
-                                       Value *args, size_t arg_count) {
-  (void)tz;
-  Value result = value_number(0.0f);
-  if (strcmp(name, "LEFT$") == 0) {
-    char *s = value_to_string(&args[0]);
-    int n = (int)args[1].number;
-    size_t len = strlen(s);
-    if (n < 0) n = 0;
-    if ((size_t)n > len) n = (int)len;
-    result = value_string(s, (size_t)n);
-    free(s);
-  } else if (strcmp(name, "RIGHT$") == 0) {
-    char *s = value_to_string(&args[0]);
-    int n = (int)args[1].number;
-    size_t len = strlen(s);
-    if (n < 0) n = 0;
-    if ((size_t)n > len) n = (int)len;
-    result = value_string(s + (len - (size_t)n), (size_t)n);
-    free(s);
-  } else if (strcmp(name, "MID$") == 0) {
-    char *s = value_to_string(&args[0]);
-    int start = (int)args[1].number;
-    int length = arg_count >= 3 ? (int)args[2].number : (int)strlen(s);
-    if (start < 1) start = 1;
-    if (length < 0) length = 0;
-    size_t slen = strlen(s);
-    size_t offset = (size_t)(start - 1);
-    if (offset > slen) offset = slen;
-    size_t max_len = slen - offset;
-    size_t use_len = (size_t)length;
-    if (use_len > max_len) use_len = max_len;
-    result = value_string(s + offset, use_len);
-    free(s);
-  } else if (strcmp(name, "LEN") == 0) {
-    char *s = value_to_string(&args[0]);
-    result = value_number((float)strlen(s));
-    free(s);
-  } else if (strcmp(name, "ASC") == 0) {
-    char *s = value_to_string(&args[0]);
-    result = value_number(s[0] ? (float)(unsigned char)s[0] : 0.0f);
-    free(s);
-  } else if (strcmp(name, "CHR$") == 0) {
-    char ch = (char)((int)args[0].number & 0xFF);
-    result = value_string(&ch, 1);
-  } else if (strcmp(name, "INKEY$") == 0) {
-    char ch;
-    if (basic_read_key(interp, 0, &ch)) {
-      result = value_string(&ch, 1);
-    } else {
-      result = value_string("", 0);
-    }
-  } else if (strcmp(name, "GETKEY$") == 0) {
-    char ch;
-    if (basic_read_key(interp, 1, &ch)) {
-      result = value_string(&ch, 1);
-    } else {
-      result = value_string("", 0);
-    }
-  } else if (strcmp(name, "ABS") == 0) {
-    result = value_number(fabsf(args[0].number));
-  } else if (strcmp(name, "INT") == 0) {
-    result = value_number(floorf(args[0].number));
-  } else if (strcmp(name, "RND") == 0) {
-    if (arg_count > 0 && args[0].type != VAL_NUMBER) {
-      runtime_error(interp, "TYPE MISMATCH");
-    } else {
-      float arg = arg_count > 0 ? args[0].number : 1.0f;
-      result = value_number(basic_rnd(interp, arg_count > 0, arg));
-    }
-  } else if (strcmp(name, "SIN") == 0) {
-    result = value_number(sinf(args[0].number));
-  } else if (strcmp(name, "COS") == 0) {
-    result = value_number(cosf(args[0].number));
-  } else if (strcmp(name, "TAN") == 0) {
-    result = value_number(tanf(args[0].number));
-  } else if (strcmp(name, "SQR") == 0) {
-    result = value_number(sqrtf(args[0].number));
-  } else if (strcmp(name, "LOG") == 0) {
-    result = value_number(logf(args[0].number));
-  } else if (strcmp(name, "EXP") == 0) {
-    result = value_number(expf(args[0].number));
-  } else if (strcmp(name, "ATN") == 0) {
-    result = value_number(atanf(args[0].number));
-  } else if (strcmp(name, "SGN") == 0) {
-    if (args[0].number > 0) result = value_number(1.0f);
-    else if (args[0].number < 0) result = value_number(-1.0f);
-    else result = value_number(0.0f);
-  } else {
-    runtime_error(interp, "SYNTAX ERROR");
-  }
+typedef struct {
+  const char *name;
+  size_t min_args;
+  size_t max_args;
+  BuiltinEvalFn evaluator;
+} BuiltinDescriptor;
+
+static Value eval_builtin_left(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  char *s = value_to_string(&args[0]);
+  int n = (int)args[1].number;
+  size_t len = strlen(s);
+  if (n < 0) n = 0;
+  if ((size_t)n > len) n = (int)len;
+  Value result = value_string(s, (size_t)n);
+  free(s);
   return result;
 }
 
-static Value parse_builtin_function_call(Tokenizer *tz, BasicInterpreter *interp, const char *name) {
+static Value eval_builtin_right(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  char *s = value_to_string(&args[0]);
+  int n = (int)args[1].number;
+  size_t len = strlen(s);
+  if (n < 0) n = 0;
+  if ((size_t)n > len) n = (int)len;
+  Value result = value_string(s + (len - (size_t)n), (size_t)n);
+  free(s);
+  return result;
+}
+
+static Value eval_builtin_mid(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  char *s = value_to_string(&args[0]);
+  int start = (int)args[1].number;
+  int length = arg_count >= 3 ? (int)args[2].number : (int)strlen(s);
+  if (start < 1) start = 1;
+  if (length < 0) length = 0;
+  size_t slen = strlen(s);
+  size_t offset = (size_t)(start - 1);
+  if (offset > slen) offset = slen;
+  size_t max_len = slen - offset;
+  size_t use_len = (size_t)length;
+  if (use_len > max_len) use_len = max_len;
+  Value result = value_string(s + offset, use_len);
+  free(s);
+  return result;
+}
+
+static Value eval_builtin_len(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  char *s = value_to_string(&args[0]);
+  Value result = value_number((float)strlen(s));
+  free(s);
+  return result;
+}
+
+static Value eval_builtin_asc(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  char *s = value_to_string(&args[0]);
+  Value result = value_number(s[0] ? (float)(unsigned char)s[0] : 0.0f);
+  free(s);
+  return result;
+}
+
+static Value eval_builtin_chr(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  char ch = (char)((int)args[0].number & 0xFF);
+  return value_string(&ch, 1);
+}
+
+static Value eval_builtin_inkey(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)args;
+  (void)arg_count;
+  char ch;
+  if (basic_read_key(interp, 0, &ch)) {
+    return value_string(&ch, 1);
+  }
+  return value_string("", 0);
+}
+
+static Value eval_builtin_getkey(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)args;
+  (void)arg_count;
+  char ch;
+  if (basic_read_key(interp, 1, &ch)) {
+    return value_string(&ch, 1);
+  }
+  return value_string("", 0);
+}
+
+static Value eval_builtin_abs(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  return value_number(fabsf(args[0].number));
+}
+
+static Value eval_builtin_int(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  return value_number(floorf(args[0].number));
+}
+
+static Value eval_builtin_rnd(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  if (arg_count > 0 && args[0].type != VAL_NUMBER) {
+    runtime_error(interp, "TYPE MISMATCH");
+    return value_number(0.0f);
+  }
+  float arg = arg_count > 0 ? args[0].number : 1.0f;
+  return value_number(basic_rnd(interp, arg_count > 0, arg));
+}
+
+static Value eval_builtin_sin(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  return value_number(sinf(args[0].number));
+}
+
+static Value eval_builtin_cos(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  return value_number(cosf(args[0].number));
+}
+
+static Value eval_builtin_tan(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  return value_number(tanf(args[0].number));
+}
+
+static Value eval_builtin_sqr(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  return value_number(sqrtf(args[0].number));
+}
+
+static Value eval_builtin_log(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  return value_number(logf(args[0].number));
+}
+
+static Value eval_builtin_exp(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  return value_number(expf(args[0].number));
+}
+
+static Value eval_builtin_atn(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  return value_number(atanf(args[0].number));
+}
+
+static Value eval_builtin_sgn(BasicInterpreter *interp, Value *args, size_t arg_count) {
+  (void)interp;
+  (void)arg_count;
+  if (args[0].number > 0) return value_number(1.0f);
+  if (args[0].number < 0) return value_number(-1.0f);
+  return value_number(0.0f);
+}
+
+static const BuiltinDescriptor BUILTIN_DESCRIPTORS[] = {
+    {"LEFT$", 2, 2, eval_builtin_left},   {"MID$", 2, 3, eval_builtin_mid},
+    {"RIGHT$", 2, 2, eval_builtin_right}, {"LEN", 1, 1, eval_builtin_len},
+    {"ASC", 1, 1, eval_builtin_asc},      {"CHR$", 1, 1, eval_builtin_chr},
+    {"INKEY$", 0, 0, eval_builtin_inkey}, {"GETKEY$", 0, 0, eval_builtin_getkey},
+    {"ABS", 1, 1, eval_builtin_abs},      {"INT", 1, 1, eval_builtin_int},
+    {"RND", 0, 1, eval_builtin_rnd},      {"SIN", 1, 1, eval_builtin_sin},
+    {"COS", 1, 1, eval_builtin_cos},      {"TAN", 1, 1, eval_builtin_tan},
+    {"SQR", 1, 1, eval_builtin_sqr},      {"LOG", 1, 1, eval_builtin_log},
+    {"EXP", 1, 1, eval_builtin_exp},      {"ATN", 1, 1, eval_builtin_atn},
+    {"SGN", 1, 1, eval_builtin_sgn},
+};
+
+static const BuiltinDescriptor *lookup_builtin_descriptor(const char *name) {
+  for (size_t i = 0; i < sizeof(BUILTIN_DESCRIPTORS) / sizeof(BUILTIN_DESCRIPTORS[0]); i++) {
+    if (strcmp(BUILTIN_DESCRIPTORS[i].name, name) == 0) {
+      return &BUILTIN_DESCRIPTORS[i];
+    }
+  }
+  return NULL;
+}
+
+static Value parse_builtin_function_call(Tokenizer *tz, BasicInterpreter *interp,
+                                         const BuiltinDescriptor *builtin) {
   Value args[3] = {0};
-  size_t min_args = 0;
-  size_t max_args = 0;
   size_t arg_count = 0;
-  int arity_known = builtin_arity(name, &min_args, &max_args);
   int too_many_args = 0;
 
   if (!token_is(tz, TOK_RPAREN, NULL)) {
@@ -134,14 +219,8 @@ static Value parse_builtin_function_call(Tokenizer *tz, BasicInterpreter *interp
     tokenizer_next(tz);
   }
 
-  int bad_arity = 0;
-  if (!arity_known) {
-    bad_arity = 1;
-  }
-  if (too_many_args) {
-    bad_arity = 1;
-  }
-  if (arg_count < min_args || arg_count > max_args) {
+  int bad_arity = too_many_args;
+  if (arg_count < builtin->min_args || arg_count > builtin->max_args) {
     bad_arity = 1;
   }
 
@@ -149,7 +228,7 @@ static Value parse_builtin_function_call(Tokenizer *tz, BasicInterpreter *interp
   if (bad_arity) {
     runtime_error(interp, "BAD ARGUMENTS");
   } else {
-    result = evaluate_builtin_function(tz, interp, name, args, arg_count);
+    result = builtin->evaluator(interp, args, arg_count);
   }
 
   size_t stored_arg_count = arg_count;
@@ -231,8 +310,9 @@ static Value parse_identifier_value(Tokenizer *tz, BasicInterpreter *interp) {
       return parse_user_function_call(tz, interp, user_fn);
     }
 
-    if (is_builtin_function_name(name)) {
-      return parse_builtin_function_call(tz, interp, name);
+    const BuiltinDescriptor *builtin = lookup_builtin_descriptor(name);
+    if (builtin) {
+      return parse_builtin_function_call(tz, interp, builtin);
     }
 
     return parse_array_access(tz, interp, name);
