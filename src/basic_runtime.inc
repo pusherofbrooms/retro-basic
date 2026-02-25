@@ -1913,6 +1913,34 @@ void basic_new(BasicInterpreter *interp) {
   interp->key_line_len = 0;
 }
 
+enum {
+  BASIC_LOAD_MAX_LINE_LENGTH = 255
+};
+
+static void basic_load_parse_error(BasicInterpreter *interp,
+                                  const char *path,
+                                  size_t file_line,
+                                  const char *reason) {
+  char message[128];
+  if (snprintf(message, sizeof(message), "LOAD ERROR IN \"%s\" LINE %zu: %s",
+               path, file_line, reason) < 0) {
+    runtime_error(interp, "LOAD ERROR");
+  } else {
+    runtime_error(interp, message);
+  }
+  print_error(interp);
+  interp->error = 0;
+}
+
+static void basic_load_discard_until_newline(FILE *file) {
+  int ch;
+  while ((ch = fgetc(file)) != EOF) {
+    if (ch == '\n') {
+      break;
+    }
+  }
+}
+
 int basic_load_file(BasicInterpreter *interp, const char *path, int replace_program) {
   FILE *file = fopen(path, "r");
   if (!file) {
@@ -1921,31 +1949,78 @@ int basic_load_file(BasicInterpreter *interp, const char *path, int replace_prog
     interp->error = 0;
     return 0;
   }
+
+  Program pending_program;
+  Program *target = &interp->program;
+  int using_pending = 0;
   if (replace_program) {
-    basic_new(interp);
+    program_init(&pending_program);
+    target = &pending_program;
+    using_pending = 1;
   }
+
   char line[1024];
+  size_t file_line = 0;
   while (fgets(line, sizeof(line), file)) {
-    char *newline = strchr(line, '\n');
-    if (newline) {
-      *newline = '\0';
+    file_line++;
+
+    size_t line_len = strlen(line);
+    int has_newline = line_len > 0 && line[line_len - 1] == '\n';
+    if (!has_newline && !feof(file)) {
+      basic_load_discard_until_newline(file);
+      fclose(file);
+      if (using_pending) {
+        program_free(&pending_program);
+      }
+      basic_load_parse_error(interp, path, file_line, "LINE TOO LONG");
+      return 0;
     }
+    if (has_newline) {
+      line[--line_len] = '\0';
+    }
+    if (line_len > BASIC_LOAD_MAX_LINE_LENGTH) {
+      fclose(file);
+      if (using_pending) {
+        program_free(&pending_program);
+      }
+      basic_load_parse_error(interp, path, file_line, "LINE TOO LONG");
+      return 0;
+    }
+    if (line_len > 0 && line[line_len - 1] == '\r') {
+      line[--line_len] = '\0';
+    }
+
     char *cursor = line;
     while (isspace((unsigned char)*cursor)) cursor++;
-    if (!isdigit((unsigned char)*cursor)) {
+    if (*cursor == '\0') {
       continue;
+    }
+    if (!isdigit((unsigned char)*cursor)) {
+      fclose(file);
+      if (using_pending) {
+        program_free(&pending_program);
+      }
+      basic_load_parse_error(interp, path, file_line, "MISSING LINE NUMBER");
+      return 0;
     }
     int number = (int)strtol(cursor, &cursor, 10);
     while (isspace((unsigned char)*cursor)) cursor++;
-    if (!program_set_line(&interp->program, number, cursor)) {
+    if (!program_set_line(target, number, cursor)) {
       fclose(file);
-      runtime_error(interp, "SYNTAX ERROR");
-      print_error(interp);
-      interp->error = 0;
+      if (using_pending) {
+        program_free(&pending_program);
+      }
+      basic_load_parse_error(interp, path, file_line, "SYNTAX ERROR");
       return 0;
     }
   }
   fclose(file);
+
+  if (using_pending) {
+    basic_new(interp);
+    interp->program = pending_program;
+  }
+
   return 1;
 }
 

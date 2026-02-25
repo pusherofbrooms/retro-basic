@@ -1,0 +1,3 @@
+10 PRINT "ORIGINAL"
+LOAD "tests/fixtures/malformed_load.bas"
+RUN

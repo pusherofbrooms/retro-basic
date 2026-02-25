@@ -42,6 +42,8 @@ run_case_env() {
 run_case "basic_flow" "tests/cases/basic_flow.in" "tests/cases/basic_flow.out"
 run_case "data_read" "tests/cases/data_read.in" "tests/cases/data_read.out"
 run_case "load_program" "tests/cases/load_program.in" "tests/cases/load_program.out"
+run_case "load_malformed" "tests/cases/load_malformed.in" "tests/cases/load_malformed.out"
+run_case "load_overlong" "tests/cases/load_overlong.in" "tests/cases/load_overlong.out"
 run_case "save_program" "tests/cases/save_program.in" "tests/cases/save_program.out"
 run_case "list_ranges" "tests/cases/list_ranges.in" "tests/cases/list_ranges.out"
 run_case "comments" "tests/cases/comments.in" "tests/cases/comments.out"
