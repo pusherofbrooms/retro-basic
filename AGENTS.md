@@ -59,6 +59,25 @@ Functions
 6. `LOAD` and file parsing
 7. Error polish + tests
 
+## Nix Discipline
+This computer runs Nix package manager with flakes.
+
+Use:
+- `nix run` for one-off commands
+- `nix shell` with the --command option if the package doesn't have a default app.
+- `nix develop` with the --command option to interact with tools defined for a devShell
+- `nix build` to build the current project.
+- If a new dependency is needed, propose a change to flake.nix.
+
+Sadly, you don't have access to a PTY, so no interactive nix shell.
+
+- No old-style Nix commands (`nix-env`, `nix-shell`, `nix-channel`, etc.)
+- No `nix profile`
+- No global installs
+- No imperative package management
+
+The system must remain reproducible and declarative.
+
 ## Testing
 - Bash test harness: `scripts/run-tests.sh` (runs any executable tests and reports when none exist)
 - Tokenization and expression precedence unit tests
@@ -67,11 +86,17 @@ Functions
 - Static analysis: `make lint`
 - Memory checks: `make test-mem`
 
+### TDD Workflow (required)
+- Follow red → green → refactor for behavior changes.
+- Add or update a failing test first, then implement the smallest code change to pass.
+- Prefer coverage at the highest-value level first (golden I/O case), then add focused unit coverage when needed.
+- Keep one behavioral assertion per test case when practical; use small, readable fixtures.
+- Before closing a `bd` issue, run `scripts/run-tests.sh` and relevant quality gates (`make lint`, `make test-mem` when available).
+- Do not change expected outputs to match regressions; only update expectations when behavior changes intentionally.
+
 ## Build and Run
 - Build: `make build/basic`
 - Run: `./build/basic`
-- Nix dev shell: `nix develop`
-- Nix build: `nix build` (binary at `./result/bin/basic`)
 
 ## Task Tracking With Beads
 Use `beads` (`bd`) as the project task tracker with dependency-aware issues.
