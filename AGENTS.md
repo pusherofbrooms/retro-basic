@@ -1,4 +1,4 @@
-# BASIC Implementation Plan (C64-Inspired)
+# BASIC Interpreter Guidelines (C64-Inspired)
 
 This repository targets a C64-inspired BASIC interpreter written in C. The goal is to capture the feel of classic BASIC while keeping the implementation pragmatic and maintainable.
 
@@ -35,7 +35,7 @@ Functions
 ## Parser and Evaluator
 - Tokenizer converts a line to tokens (keywords, identifiers, numbers, strings, operators)
 - Expression parser uses shunting-yard or Pratt for precedence
-- Store token lists per line and parse on execution initially
+- Store token lists per line and parse on execution
 
 ## Runtime Stacks
 - `FOR` stack: control var, limit, step, return pointer
@@ -49,15 +49,6 @@ Functions
 ## File Handling
 - `LOAD "path"` reads a plain-text file of line-numbered BASIC
 - Replace program by default
-
-## Phased Implementation
-1. Tokenizer + line store + `LIST/NEW/RUN`
-2. Expressions + variables + `PRINT/INPUT`
-3. Flow control (`IF`, `GOTO`, `GOSUB`, `FOR/NEXT`)
-4. `DATA/READ/RESTORE` + arrays
-5. String + math functions
-6. `LOAD` and file parsing
-7. Error polish + tests
 
 ## Nix Discipline
 This computer runs Nix package manager with flakes.
@@ -132,6 +123,6 @@ Use `beads` (`bd`) as the project task tracker with dependency-aware issues.
 
 ### Recommended Conventions
 - Keep one issue per concrete, testable change.
-- Represent phase work (from the implementation plan above) as epics with child tasks.
+- Represent larger initiatives as epics with child tasks.
 - Encode ordering with dependencies instead of long checklist comments.
 - Before starting new work, run `bd ready` and pick from unblocked tasks.
