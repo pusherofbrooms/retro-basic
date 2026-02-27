@@ -299,7 +299,7 @@ static Value parse_array_access(Tokenizer *tz, BasicInterpreter *interp, const c
 
 static Value parse_identifier_value(Tokenizer *tz, BasicInterpreter *interp) {
   char name[128];
-  strncpy(name, tz->current.text, sizeof(name));
+  snprintf(name, sizeof(name), "%s", tz->current.text);
   tokenizer_next(tz);
 
   if (token_is(tz, TOK_LPAREN, NULL)) {

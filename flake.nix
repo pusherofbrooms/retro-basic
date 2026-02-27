@@ -41,10 +41,11 @@
         in {
           default = pkgs.mkShell {
             packages = [
-              pkgs.gcc
-              pkgs.gnumake
               pkgs.beads
               pkgs.clang-tools
+              pkgs.gcc
+              pkgs.gnumake
+              pkgs.python3
               pi.packages.${system}.pi
             ]
             ++ pkgs.lib.optional (!pkgs.stdenv.isDarwin) pkgs.valgrind;

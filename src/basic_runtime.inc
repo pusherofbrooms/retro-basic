@@ -4,8 +4,7 @@ static int parse_variable_target(Tokenizer *tz, BasicInterpreter *interp, char *
     runtime_error(interp, "SYNTAX ERROR");
     return 0;
   }
-  strncpy(out_name, tz->current.text, out_size);
-  out_name[out_size - 1] = '\0';
+  snprintf(out_name, out_size, "%s", tz->current.text);
   tokenizer_next(tz);
   if (token_is(tz, TOK_LPAREN, NULL)) {
     *is_array = 1;
@@ -492,8 +491,7 @@ static void execute_def(Tokenizer *tz, BasicInterpreter *interp) {
     return;
   }
   char fn_name[128];
-  strncpy(fn_name, tz->current.text, sizeof(fn_name));
-  fn_name[sizeof(fn_name) - 1] = '\0';
+  snprintf(fn_name, sizeof(fn_name), "%s", tz->current.text);
   tokenizer_next(tz);
   if (!token_is(tz, TOK_LPAREN, NULL)) {
     runtime_error(interp, "SYNTAX ERROR");
@@ -505,8 +503,7 @@ static void execute_def(Tokenizer *tz, BasicInterpreter *interp) {
     return;
   }
   char arg_name[128];
-  strncpy(arg_name, tz->current.text, sizeof(arg_name));
-  arg_name[sizeof(arg_name) - 1] = '\0';
+  snprintf(arg_name, sizeof(arg_name), "%s", tz->current.text);
   tokenizer_next(tz);
   if (!token_is(tz, TOK_RPAREN, NULL)) {
     runtime_error(interp, "SYNTAX ERROR");
@@ -710,8 +707,7 @@ static void execute_input(Tokenizer *tz, BasicInterpreter *interp) {
   char prompt[256] = "? ";
 
   if (tz->current.type == TOK_STRING) {
-    strncpy(prompt, tz->current.string, sizeof(prompt));
-    prompt[sizeof(prompt) - 1] = '\0';
+    snprintf(prompt, sizeof(prompt), "%s", tz->current.string);
     tokenizer_next(tz);
     if (tz->current.type != TOK_SEMICOLON && tz->current.type != TOK_COMMA) {
       runtime_error(interp, "SYNTAX ERROR");
@@ -1257,7 +1253,7 @@ static void execute_for(Tokenizer *tz, BasicInterpreter *interp, size_t current_
 static void execute_next(Tokenizer *tz, BasicInterpreter *interp, size_t *next_line_index) {
   char name[128] = {0};
   if (tz->current.type == TOK_IDENT) {
-    strncpy(name, tz->current.text, sizeof(name));
+    snprintf(name, sizeof(name), "%s", tz->current.text);
     tokenizer_next(tz);
   }
   if (interp->for_count == 0) {
@@ -1291,7 +1287,7 @@ static void execute_dim(Tokenizer *tz, BasicInterpreter *interp) {
       return;
     }
     char name[128];
-    strncpy(name, tz->current.text, sizeof(name));
+    snprintf(name, sizeof(name), "%s", tz->current.text);
     tokenizer_next(tz);
     if (!token_is(tz, TOK_LPAREN, NULL)) {
       runtime_error(interp, "SYNTAX ERROR");

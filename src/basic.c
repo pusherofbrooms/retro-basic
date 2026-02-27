@@ -527,8 +527,7 @@ static void tokenizer_next(Tokenizer *tz) {
     }
     if (tz->input[tz->pos] != '"') {
       tz->current.type = TOK_INVALID;
-      strncpy(tz->current.text, "UNTERMINATED STRING", sizeof(tz->current.text));
-      tz->current.text[sizeof(tz->current.text) - 1] = '\0';
+      snprintf(tz->current.text, sizeof(tz->current.text), "UNTERMINATED STRING");
       return;
     }
     size_t len = tz->pos - start;
@@ -586,24 +585,22 @@ static void tokenizer_next(Tokenizer *tz) {
     case '<':
       if (tz->input[tz->pos] == '=') {
         tz->pos++;
-        strncpy(tz->current.text, "<=", sizeof(tz->current.text));
+        snprintf(tz->current.text, sizeof(tz->current.text), "<=");
       } else if (tz->input[tz->pos] == '>') {
         tz->pos++;
-        strncpy(tz->current.text, "<>", sizeof(tz->current.text));
+        snprintf(tz->current.text, sizeof(tz->current.text), "<>");
       } else {
-        strncpy(tz->current.text, "<", sizeof(tz->current.text));
+        snprintf(tz->current.text, sizeof(tz->current.text), "<");
       }
-      tz->current.text[sizeof(tz->current.text) - 1] = '\0';
       tz->current.type = TOK_OP;
       return;
     case '>':
       if (tz->input[tz->pos] == '=') {
         tz->pos++;
-        strncpy(tz->current.text, ">=", sizeof(tz->current.text));
+        snprintf(tz->current.text, sizeof(tz->current.text), ">=");
       } else {
-        strncpy(tz->current.text, ">", sizeof(tz->current.text));
+        snprintf(tz->current.text, sizeof(tz->current.text), ">");
       }
-      tz->current.text[sizeof(tz->current.text) - 1] = '\0';
       tz->current.type = TOK_OP;
       return;
     case '=':
@@ -667,8 +664,7 @@ static void runtime_error(BasicInterpreter *interp, const char *message) {
   interp->error = 1;
   interp->error_has_column = 0;
   interp->error_column = 0;
-  strncpy(interp->error_msg, message, sizeof(interp->error_msg) - 1);
-  interp->error_msg[sizeof(interp->error_msg) - 1] = '\0';
+  snprintf(interp->error_msg, sizeof(interp->error_msg), "%s", message);
 }
 
 static void runtime_error_at_token(BasicInterpreter *interp, Tokenizer *tz, const char *message) {
