@@ -1,129 +1,78 @@
-# BASIC Interpreter Guidelines (C64-Inspired)
+# Project Instructions: retro-basic
 
-This repository targets a C64-inspired BASIC interpreter written in C. The goal is to capture the feel of classic BASIC while keeping the implementation pragmatic and maintainable.
+C64-inspired BASIC interpreter in C. Preserve the classic BASIC feel while keeping behavior explicit, testable, and maintainable.
 
-## Scope and Behavior
-- Dialect: C64-style “rich” BASIC with practical simplifications
-- Variables: multi-letter, case-insensitive; `$` suffix for strings
-- Numeric model: 32-bit float for numbers; 32-bit int where needed (indices)
-- Storage: plain-text program files (no PRG/tokenized storage)
-- System emulation: none (no PEEK/POKE/SYS/WAIT)
-- File I/O: `LOAD` reads a plain-text BASIC program from local filesystem
+## Product Scope
 
-## Language Feature Set
-Statements
-- Program control: `RUN`, `LIST`, `NEW`, `END`, `STOP`
-- Flow: `IF ... THEN`, `GOTO`, `GOSUB`, `RETURN`, `FOR`, `NEXT`
-- I/O: `PRINT`, `INPUT`
-- Data: `DATA`, `READ`, `RESTORE`
-- Variables/arrays: `DIM`, `LET` (optional; implicit assignment)
+- Dialect: pragmatic C64-style BASIC, not full system emulation.
+- Program storage: plain-text, line-numbered source; no PRG/tokenized files.
+- Variables: case-insensitive multi-letter names; `$` suffix means string.
+- Numbers: `float`-style numeric values; integers where required for indices, line numbers, and screen coordinates.
+- No hardware emulation: avoid `PEEK`, `POKE`, `SYS`, `WAIT`, etc.
+- File commands operate on local plain-text BASIC files.
 
-Functions
-- Numeric: `ABS`, `INT`, `RND`, `SIN`, `COS`, `TAN`, `SQR`, `LOG`, `EXP`, `ATN`, `SGN`
-- String: `LEFT$`, `MID$`, `RIGHT$`, `LEN`, `ASC`, `CHR$`
+## Current Feature Surface
 
-## Execution Model
-- REPL supports immediate mode and line-numbered program mode
-- Program stored as ordered map: line number -> token list
-- `RUN` executes lines in ascending order; `GOTO`/`GOSUB` jump by line number
+Keep README examples and tests aligned when changing any of these areas:
 
-## Data Model
-- Types: number (`float`), string (char* with length), boolean via numeric truth
-- Variables: map keyed by uppercase name; `$` suffix denotes string
-- Arrays: allocated on `DIM`; map by name; start with 1D arrays
+- Program control: `RUN`, `CONT`, `LIST`, `NEW`, `END`, `STOP`, `DELETE`, `FIND`, `RENUM`, `TRON`, `TROFF`.
+- Flow: `IF/THEN/ELSE`, `GOTO`, `GOSUB`, `RETURN`, `ON ... GOTO/GOSUB`, `FOR/NEXT`.
+- I/O: `PRINT`, `INPUT`, `INKEY$()`, `GETKEY$()`.
+- Data: `DATA`, `READ`, `RESTORE`.
+- Variables/arrays: `LET` optional, implicit assignment, `DIM` 1D/2D arrays.
+- User functions: `DEF FN...`.
+- Files: `LOAD`, `MERGE`, `SAVE`.
+- Screen commands: `CLS`, `LOCATE`, `COLOR`, `PRINT@`, `PLOT`, `LINE`.
+- Numeric/string functions: keep parser, evaluator, and manual examples in sync.
 
-## Parser and Evaluator
-- Tokenizer converts a line to tokens (keywords, identifiers, numbers, strings, operators)
-- Expression parser uses shunting-yard or Pratt for precedence
-- Store token lists per line and parse on execution
+## Implementation Guidelines
 
-## Runtime Stacks
-- `FOR` stack: control var, limit, step, return pointer
-- `GOSUB` stack: return pointer
-- `DATA` cursor per program run
+- Keep parsing/execution errors centralized and report program line numbers when available.
+- Preserve immediate mode and line-numbered program mode.
+- `RUN` executes stored lines in ascending order and resets runtime state while keeping the program.
+- `GOTO`/`GOSUB` jump by BASIC line number, not source array index.
+- Prefer small, direct C changes over broad rewrites.
+- Keep memory ownership obvious; free strings, arrays, runtime stacks, and loaded program state on replacement paths.
+- Update `README.md`, `MANUAL.md`, or fixtures when visible behavior changes.
 
-## Error Handling
-- Central error enum and classic messages
-- Include line number for program errors
+## Build, Run, Test
 
-## File Handling
-- `LOAD "path"` reads a plain-text file of line-numbered BASIC
-- Replace program by default
+Use the project targets:
 
-## Nix Discipline
-This computer runs Nix package manager with flakes.
-
-Use:
-- `nix run` for one-off commands
-- `nix shell` with the --command option if the package doesn't have a default app.
-- `nix develop` with the --command option to interact with tools defined for a devShell
-- `nix build` to build the current project.
-- If a new dependency is needed, propose a change to flake.nix.
-
-Sadly, you don't have access to a PTY, so no interactive nix shell.
-
-- No old-style Nix commands (`nix-env`, `nix-shell`, `nix-channel`, etc.)
-- No `nix profile`
-- No global installs
-- No imperative package management
-
-The system must remain reproducible and declarative.
-
-## Testing
-- Bash test harness: `scripts/run-tests.sh` (runs any executable tests and reports when none exist)
-- Tokenization and expression precedence unit tests
-- Golden program output tests
-- Error case coverage (undefined line, type mismatch, out of data)
-- Static analysis: `make lint`
-- Memory checks: `make test-mem`
-
-### TDD Workflow (required)
-- Follow red → green → refactor for behavior changes.
-- Add or update a failing test first, then implement the smallest code change to pass.
-- Prefer coverage at the highest-value level first (golden I/O case), then add focused unit coverage when needed.
-- Keep one behavioral assertion per test case when practical; use small, readable fixtures.
-- Before closing a `bd` issue, run `scripts/run-tests.sh` and relevant quality gates (`make lint`, `make test-mem` when available).
-- Do not change expected outputs to match regressions; only update expectations when behavior changes intentionally.
-
-## Build and Run
 - Build: `make build/basic`
 - Run: `./build/basic`
+- Tests: `scripts/run-tests.sh` or `make test`
+- Lint: `make lint`
+- Memory checks: `make test-mem`
+
+Before finishing code changes, run the relevant tests. For behavior changes, run `scripts/run-tests.sh`; run `make lint` and `make test-mem` when practical or when touching C ownership/control-flow code.
+
+## TDD Expectations
+
+- Follow red → green → refactor for behavior changes.
+- Add or update a failing test first.
+- Prefer high-value golden I/O tests, then add focused unit/regression coverage as needed.
+- Cover errors such as undefined lines, type mismatch, syntax errors, and out-of-data cases.
+- Do not update expected output to hide regressions.
+
+## Nix Discipline
+
+This machine uses Nix with flakes.
+
+- Use `nix develop --command ...`, `nix run ...`, `nix shell ... --command ...`, or `nix build`.
+- Do not use `nix-env`, `nix-shell`, `nix-channel`, `nix profile`, or global installs.
+- No interactive shells/PTY assumptions.
+- If dependencies change, update `flake.nix`/`flake.lock` declaratively.
 
 ## Task Tracking With Beads
-Use `beads` (`bd`) as the project task tracker with dependency-aware issues.
 
-### Setup
-- Check installation health first: `bd doctor`
-- Confirm active database location: `bd where`
-- In sandboxed/non-interactive agent sessions, prefer `bd --no-daemon ...` to avoid daemon startup timeouts.
+Use `bd --no-daemon ...` in agent sessions.
 
-### `bd init` bad behavior
-`bd init` modifies AGENTS.md, which is not desirable. If you must run `bd init` make sure you restore AGENTS.md by:
-1) add and commit any recent changes to AGENTS.md
-2) run `bd init`
-3) `git checkout -- AGENTS.md`
+- Check health/location: `bd --no-daemon doctor`, `bd --no-daemon where`.
+- Pick work: `bd --no-daemon ready`; inspect with `bd --no-daemon show <id>`.
+- Create focused work items: `bd --no-daemon create "Title"`.
+- Track dependencies with `bd --no-daemon dep add <blocked-id> <blocking-id>`.
+- Close completed items only after tests/docs are done: `bd --no-daemon close <id>`.
+- Avoid `bd init`; it rewrites `AGENTS.md`. If unavoidable, restore this file afterward.
 
-### Daily Workflow
-- Create a task: `bd create "Implement tokenizer line storage"`
-- Quick-capture a task and return only ID: `bd q "Fix FOR/NEXT edge case"`
-- List open work: `bd list`
-- Show work ready to pick up (no blockers): `bd ready`
-- Inspect one task: `bd show <id>`
-- Update status/fields: `bd update <id> --status in_progress` (or other `bd update` flags)
-- Use `bd set-state` only for dimensioned operational state labels, e.g. `bd set-state <id> mode=in_progress`
-- Close when done: `bd close <id>`
-
-### Dependencies and Planning
-- Block one task on another: `bd dep add <blocked-id> <blocking-id>`
-- Visualize dependency graph: `bd graph <issue-id>`
-- Find currently blocked tasks: `bd blocked`
-
-### Sync Prerequisite
-- Ensure `.beads/issues.jsonl` is tracked by git (not ignored in global excludes or `.git/info/exclude`) before relying on `bd sync`.
-
-### Recommended Conventions
-- Keep one issue per concrete, testable change.
-- Represent larger initiatives as epics with child tasks.
-- Encode ordering with dependencies instead of long checklist comments.
-- Before starting new work, run `bd ready` and pick from unblocked tasks.
-- As tasks are completed, update any affected documentation (README, AGENTS, tests/docs comments, etc.) in the same change.
+Keep `.beads/issues.jsonl` tracked so bead sync remains reliable.
