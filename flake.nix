@@ -3,15 +3,9 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    codex = {
-      url = "github:openai/codex";
-      flake = false;
-    };
-    pi.url = "github:pusherofbrooms/pi-mono-nix";
-    pi.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, codex, pi }:
+  outputs = { self, nixpkgs, ... }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system);
@@ -41,16 +35,13 @@
         in {
           default = pkgs.mkShell {
             packages = [
-              pkgs.beads
               pkgs.clang-tools
               pkgs.gcc
               pkgs.gnumake
               pkgs.python3
-              pi.packages.${system}.pi
             ]
             ++ pkgs.lib.optional (!pkgs.stdenv.isDarwin) pkgs.valgrind;
             shellHook = ''
-              export CODEX_SRC="${codex}"
             '';
           };
         });
