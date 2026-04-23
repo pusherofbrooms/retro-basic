@@ -64,15 +64,3 @@ This machine uses Nix with flakes.
 - No interactive shells/PTY assumptions.
 - If dependencies change, update `flake.nix`/`flake.lock` declaratively.
 
-## Task Tracking With Beads
-
-Use `bd --no-daemon ...` in agent sessions.
-
-- Check health/location: `bd --no-daemon doctor`, `bd --no-daemon where`.
-- Pick work: `bd --no-daemon ready`; inspect with `bd --no-daemon show <id>`.
-- Create focused work items: `bd --no-daemon create "Title"`.
-- Track dependencies with `bd --no-daemon dep add <blocked-id> <blocking-id>`.
-- Close completed items only after tests/docs are done: `bd --no-daemon close <id>`.
-- Avoid `bd init`; it rewrites `AGENTS.md`. If unavoidable, restore this file afterward.
-
-Keep `.beads/issues.jsonl` tracked so bead sync remains reliable.
